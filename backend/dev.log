@@ -1,0 +1,15 @@
+
+> hucems-backend@1.0.0 dev
+> nodemon server.js
+
+[33m[nodemon] 3.1.14[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: js,mjs,cjs,json[39m
+[32m[nodemon] starting `node server.js`[39m
+MongoDB connected: 127.0.0.1/hucems_db
+HUCEMS API running on port 5000
+[0mPOST /api/auth/login [32m200[0m 121.550 ms - 421[0m
+[0mGET /api/students/academic-options [32m200[0m 14.253 ms - 183[0m
+[0mPOST /api/auth/login [32m200[0m 107.796 ms - 798[0m
+[0mGET /api/student/my-courses [32m200[0m 13.833 ms - 2[0m
