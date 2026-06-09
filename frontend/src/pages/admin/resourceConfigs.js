@@ -12,9 +12,6 @@ export const studentsConfig = {
     { name: 'faculty', label: 'Faculty', defaultValue: facultyDefault },
     { name: 'department', label: 'Department', defaultValue: departmentDefault },
     { name: 'className', label: 'Class Name', defaultValue: 'BIT-4A' },
-    { name: 'semester', label: 'Semester', defaultValue: 'Semester 2 - 2024/2025' },
-    { name: 'academicYear', label: 'Academic Year', defaultValue: '2024/2025' },
-    { name: 'email', label: 'Email', type: 'email' },
     { name: 'password', label: 'Password', type: 'password', defaultValue: '123456' },
     { name: 'status', label: 'Status', type: 'select', options: statusOptions, defaultValue: 'active' }
   ],
@@ -24,7 +21,6 @@ export const studentsConfig = {
     { key: 'faculty', label: 'Faculty' },
     { key: 'department', label: 'Department' },
     { key: 'className', label: 'Class' },
-    { key: 'semester', label: 'Semester' },
     { key: 'status', label: 'Status' }
   ]
 };

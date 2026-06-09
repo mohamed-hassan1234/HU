@@ -1,8 +1,9 @@
 import ResourcePage from '../../components/ResourcePage';
 import AdminAssignmentsPage from './AdminAssignmentsPage';
-import { coursesConfig, lecturersConfig, questionsConfig, studentsConfig } from './resourceConfigs';
+import AdminStudentsPage from './AdminStudentsPage';
+import { coursesConfig, lecturersConfig, questionsConfig } from './resourceConfigs';
 
-export const StudentsPage = () => <ResourcePage {...studentsConfig} />;
+export const StudentsPage = () => <AdminStudentsPage />;
 export const LecturersPage = () => <ResourcePage {...lecturersConfig} />;
 export const CoursesPage = () => <ResourcePage {...coursesConfig} />;
 export const AssignmentsPage = () => <AdminAssignmentsPage />;

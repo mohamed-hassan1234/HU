@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 
 export default function ProfilePage() {
   const { profile, user } = useAuth();
-  const entries = profile ? Object.entries(profile).filter(([key]) => !['_id', '__v', 'createdAt', 'updatedAt', 'password'].includes(key)) : [];
+  const entries = profile ? Object.entries(profile).filter(([key]) => !['_id', '__v', 'createdAt', 'updatedAt', 'password', 'email'].includes(key)) : [];
   return (
     <>
       <PageHeader title="Profile" subtitle="Your academic profile loaded automatically after login." />

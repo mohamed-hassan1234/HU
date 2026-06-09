@@ -4,7 +4,7 @@ import PageHeader from '../../components/PageHeader';
 import { toast } from '../../utils/alerts';
 
 const imports = [
-  ['Import Students CSV', '/students/import-csv', 'student_id,full_name,faculty,department,class_name,semester,academic_year,email,password,status'],
+  ['Import Students CSV', '/students/import-csv', 'student_id,full_name,faculty,department,class_name,password,status'],
   ['Import Lecturers CSV', '/lecturers/import-csv', 'lecturer_id,full_name,password,status'],
   ['Import Courses CSV', '/courses/import-csv', 'course_code,course_name,credit_hours,status'],
   ['Import Course Assignments CSV', '/assignments/import-csv', 'assignment_id,course_code,course_name,class_name,semester,academic_year,lecturer_id,lecturer_name,status'],

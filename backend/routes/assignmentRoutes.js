@@ -85,13 +85,11 @@ const ensureUniqueAssignment = async (payload, ignoreId) => {
 const ensureStudentsExistForAssignment = async (payload) => {
   const exists = await Student.exists({
     className: payload.className,
-    semester: payload.semester,
-    academicYear: payload.academicYear,
     status: { $ne: 'inactive' }
   });
   if (!exists) {
     throw Object.assign(
-      new Error('No active students found for this class, semester, and academic year. Select values from the student records.'),
+      new Error('No active students found for this class. Select a class from the student records.'),
       { statusCode: 400 }
     );
   }

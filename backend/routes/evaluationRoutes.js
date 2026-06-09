@@ -130,8 +130,6 @@ const createEvaluation = async (req, res) => {
   const assignment = await CourseAssignment.findOne({
     ...(req.body.assignmentId ? { assignmentId: req.body.assignmentId } : { courseCode: req.body.courseCode }),
     className: student.className,
-    semester: student.semester,
-    academicYear: student.academicYear,
     status: { $ne: 'inactive' }
   });
   if (!assignment) return res.status(404).json({ message: 'Course assignment not found for this student' });

@@ -54,7 +54,6 @@ const students = Array.from({ length: 10 }, (_, index) => {
     className,
     semester,
     academicYear,
-    email: `st${number}@hu.edu.so`,
     password: '123456',
     status: 'active'
   };

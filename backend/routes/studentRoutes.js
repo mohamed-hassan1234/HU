@@ -17,9 +17,6 @@ const columns = [
   { header: 'faculty', key: 'faculty' },
   { header: 'department', key: 'department' },
   { header: 'class_name', key: 'className' },
-  { header: 'semester', key: 'semester' },
-  { header: 'academic_year', key: 'academicYear' },
-  { header: 'email', key: 'email' },
   { header: 'status', key: 'status' }
 ];
 
@@ -29,9 +26,6 @@ const toStudent = (body) => ({
   faculty: body.faculty,
   department: body.department,
   className: body.className || body.class_name,
-  semester: body.semester,
-  academicYear: body.academicYear || body.academic_year,
-  email: body.email,
   password: body.password,
   status: body.status || 'active'
 });
@@ -74,51 +68,6 @@ const getUniqueClasses = async (req, res) => {
 };
 
 router.get('/classes', adminOnly, getUniqueClasses);
-
-router.get('/academic-options', adminOnly, async (req, res) => {
-  try {
-    const students = await Student.find().select('className semester academicYear').lean();
-    const classes = new Set();
-    const semesters = new Set();
-    const academicYears = new Set();
-    const byClass = {};
-
-    students.forEach((student) => {
-      const className = student.className?.trim();
-      const semester = student.semester?.trim();
-      const academicYear = student.academicYear?.trim();
-      if (!className) return;
-
-      classes.add(className);
-      if (semester) semesters.add(semester);
-      if (academicYear) academicYears.add(academicYear);
-
-      byClass[className] ||= { semesters: new Set(), academicYears: new Set() };
-      if (semester) byClass[className].semesters.add(semester);
-      if (academicYear) byClass[className].academicYears.add(academicYear);
-    });
-
-    res.json({
-      classes: [...classes].sort(),
-      semesters: [...semesters].sort(),
-      academicYears: [...academicYears].sort(),
-      byClass: Object.fromEntries(
-        Object.entries(byClass).map(([className, values]) => [
-          className,
-          {
-            semesters: [...values.semesters].sort(),
-            academicYears: [...values.academicYears].sort()
-          }
-        ])
-      )
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: 'Failed to fetch academic options',
-      error: error.message
-    });
-  }
-});
 
 router.get('/', adminOnly, async (req, res) => {
   const { search = '', page = 1, limit = 10, faculty, department, className } = req.query;
@@ -189,11 +138,9 @@ router.get('/me/courses', protect, authorize('student'), async (req, res) => {
   const [assignments, evaluations] = await Promise.all([
     CourseAssignment.find({
       className: student.className,
-      semester: student.semester,
-      academicYear: student.academicYear,
       status: { $ne: 'inactive' }
     }).sort({ courseCode: 1 }),
-    Evaluation.find({ studentId: student.studentId, semester: student.semester, academicYear: student.academicYear })
+    Evaluation.find({ studentId: student.studentId })
   ]);
   const evaluated = new Set(evaluations.map((item) => item.assignmentId || String(item.assignment)));
   res.json(

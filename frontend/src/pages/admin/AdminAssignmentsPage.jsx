@@ -21,7 +21,6 @@ export default function AdminAssignmentsPage() {
   const [courses, setCourses] = useState([]);
   const [lecturers, setLecturers] = useState([]);
   const [classes, setClasses] = useState([]);
-  const [academicOptions, setAcademicOptions] = useState({ semesters: [], academicYears: [], byClass: {} });
   const [filters, setFilters] = useState({ courseCode: '', lecturerId: '', className: '', semester: '', academicYear: '' });
   const [form, setForm] = useState(blankForm);
   const [editing, setEditing] = useState(null);
@@ -45,16 +44,11 @@ export default function AdminAssignmentsPage() {
     Promise.all([
       api.get('/courses', { params: { limit: 500 } }),
       api.get('/lecturers', { params: { limit: 500 } }),
-      api.get('/students/academic-options')
-    ]).then(([courseRes, lecturerRes, optionsRes]) => {
+      api.get('/students/classes')
+    ]).then(([courseRes, lecturerRes, classesRes]) => {
       setCourses(courseRes.data.data || []);
       setLecturers(lecturerRes.data.data || []);
-      setClasses(optionsRes.data.classes || []);
-      setAcademicOptions({
-        semesters: optionsRes.data.semesters || [],
-        academicYears: optionsRes.data.academicYears || [],
-        byClass: optionsRes.data.byClass || {}
-      });
+      setClasses(classesRes.data || []);
     }).catch((error) => {
       console.error('Failed to load assignment form options', error);
       toast.fire({ icon: 'error', title: 'Failed to load assignment options' });
@@ -67,8 +61,6 @@ export default function AdminAssignmentsPage() {
 
   const semesters = useMemo(() => [...new Set(assignments.map((item) => item.semester).filter(Boolean))], [assignments]);
   const years = useMemo(() => [...new Set(assignments.map((item) => item.academicYear).filter(Boolean))], [assignments]);
-  const formSemesters = academicOptions.byClass[form.className]?.semesters || academicOptions.semesters;
-  const formAcademicYears = academicOptions.byClass[form.className]?.academicYears || academicOptions.academicYears;
 
   const openCreate = () => {
     setEditing(null);
@@ -259,34 +251,18 @@ export default function AdminAssignmentsPage() {
                 <select
                   className="input"
                   value={form.className}
-                  onChange={(e) => {
-                    const nextClass = e.target.value;
-                    const nextSemesters = academicOptions.byClass[nextClass]?.semesters || academicOptions.semesters;
-                    const nextYears = academicOptions.byClass[nextClass]?.academicYears || academicOptions.academicYears;
-                    setForm({
-                      ...form,
-                      className: nextClass,
-                      semester: nextSemesters.includes(form.semester) ? form.semester : '',
-                      academicYear: nextYears.includes(form.academicYear) ? form.academicYear : ''
-                    });
-                  }}
+                  onChange={(e) => setForm({ ...form, className: e.target.value })}
                   required
                 >
                   <option value="">Select Class</option>
                   {classes.map((className) => <option key={className} value={className}>{className}</option>)}
                 </select>
               </Field>
-              <Field label="Step 4: Select Semester">
-                <select className="input" value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} required>
-                  <option value="">Select Semester</option>
-                  {formSemesters.map((semester) => <option key={semester} value={semester}>{semester}</option>)}
-                </select>
+              <Field label="Enter Semester">
+                <input className="input" value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} placeholder="Semester 2 - 2024/2025" required />
               </Field>
-              <Field label="Step 5: Select Academic Year">
-                <select className="input" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} required>
-                  <option value="">Select Academic Year</option>
-                  {formAcademicYears.map((academicYear) => <option key={academicYear} value={academicYear}>{academicYear}</option>)}
-                </select>
+              <Field label="Enter Academic Year">
+                <input className="input" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} placeholder="2024/2025" required />
               </Field>
               <Field label="Status">
                 <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
