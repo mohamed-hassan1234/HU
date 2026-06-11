@@ -17,7 +17,7 @@ const activityRoutes = require('./routes/activityRoutes');
 
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
+app.use(cors({ origin: process.env.CLIENT_URL || 'https://hu.elivateict.com', credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
@@ -48,7 +48,7 @@ app.use((error, req, res, next) => {
   });
 });
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5020;
 
 connectDB()
   .then(() => app.listen(port, () => console.log(`HUCEMS API running on port ${port}`)))
