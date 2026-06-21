@@ -16,6 +16,11 @@ const buildFilter = (query) => {
   ['assignmentId', 'faculty', 'department', 'courseCode', 'lecturerId', 'className', 'semester', 'academicYear'].forEach((key) => {
     if (query[key]) filter[key] = query[key];
   });
+  if (query.dateFrom || query.dateTo) {
+    filter.submittedAt = {};
+    if (query.dateFrom) filter.submittedAt.$gte = new Date(query.dateFrom);
+    if (query.dateTo) filter.submittedAt.$lte = new Date(query.dateTo);
+  }
   return filter;
 };
 
@@ -44,14 +49,10 @@ const getAnalyticsData = async (query = {}) => {
     status: 'active',
     ...(filter.faculty ? { faculty: filter.faculty } : {}),
     ...(filter.department ? { department: filter.department } : {}),
-    ...(filter.className ? { className: filter.className } : {}),
-    ...(filter.semester ? { semester: filter.semester } : {}),
-    ...(filter.academicYear ? { academicYear: filter.academicYear } : {})
+    ...(filter.className ? { className: filter.className } : {})
   };
   const assignmentFilter = {
     status: { $ne: 'inactive' },
-    ...(filter.faculty ? { faculty: filter.faculty } : {}),
-    ...(filter.department ? { department: filter.department } : {}),
     ...(filter.className ? { className: filter.className } : {}),
     ...(filter.semester ? { semester: filter.semester } : {}),
     ...(filter.academicYear ? { academicYear: filter.academicYear } : {}),
@@ -59,20 +60,106 @@ const getAnalyticsData = async (query = {}) => {
     ...(filter.lecturerId ? { lecturerId: filter.lecturerId } : {}),
     ...(filter.assignmentId ? { assignmentId: filter.assignmentId } : {})
   };
-  const [totalStudents, totalLecturers, totalCourses, totalAssignments] = await Promise.all([
-    Student.countDocuments(studentFilter),
-    Lecturer.countDocuments({ status: 'active' }),
-    Course.countDocuments({ status: 'active' }),
-    CourseAssignment.countDocuments(assignmentFilter)
+  const [students, lecturers, courses, rawAssignments] = await Promise.all([
+    Student.find(studentFilter).lean(),
+    Lecturer.find({ status: 'active' }).lean(),
+    Course.find({ status: 'active', ...(filter.courseCode ? { courseCode: filter.courseCode } : {}) }).lean(),
+    CourseAssignment.find(assignmentFilter).lean()
   ]);
+  const eligibleClasses = new Set(students.map((item) => item.className));
+  const assignments = rawAssignments.filter((item) => eligibleClasses.has(item.className));
+  const totalStudents = students.length;
+  const totalLecturers = lecturers.length;
+  const totalCourses = courses.length;
 
   const lecturerRanking = groupAverage(evaluations, 'lecturerName', 'lecturerOverallRating');
   const courseSatisfaction = groupAverage(evaluations, 'courseName', 'courseOverallRating');
   const departmentComparison = groupAverage(evaluations, 'department', 'courseOverallRating');
   const facultyComparison = groupAverage(evaluations, 'faculty', 'courseOverallRating');
   const semesterTrends = groupAverage(evaluations, 'semester', 'courseOverallRating');
-  const possibleSubmissions = totalStudents * totalAssignments;
-  const participationRate = possibleSubmissions ? Number(((evaluations.length / possibleSubmissions) * 100).toFixed(1)) : 0;
+  const activeSemesters = [...new Set(assignments.map((item) => item.semester).filter(Boolean))];
+  const studentFacultyByClass = new Map();
+  students.forEach((item) => {
+    if (!studentFacultyByClass.has(item.className)) studentFacultyByClass.set(item.className, item.faculty || 'Unknown');
+  });
+
+  const teacherMap = new Map(lecturers.map((item) => [item.lecturerId, {
+    lecturerId: item.lecturerId,
+    teacher: item.fullName,
+    faculty: 'Not assigned',
+    total: 0,
+    totalEvaluations: 0
+  }]));
+  assignments.forEach((item) => {
+    const teacher = teacherMap.get(item.lecturerId);
+    if (teacher) teacher.faculty = studentFacultyByClass.get(item.className) || teacher.faculty;
+  });
+  evaluations.forEach((item) => {
+    const teacher = teacherMap.get(item.lecturerId) || {
+      lecturerId: item.lecturerId,
+      teacher: item.lecturerName,
+      faculty: item.faculty || 'Unknown',
+      total: 0,
+      totalEvaluations: 0
+    };
+    teacher.faculty = item.faculty || teacher.faculty;
+    teacher.total += Number(item.lecturerOverallRating || 0);
+    teacher.totalEvaluations += 1;
+    teacherMap.set(item.lecturerId, teacher);
+  });
+  const teacherLeaderboard = [...teacherMap.values()]
+    .map((item) => ({
+      ...item,
+      averageScore: item.totalEvaluations ? Number((item.total / item.totalEvaluations).toFixed(2)) : 0,
+      trend: item.totalEvaluations ? (item.total / item.totalEvaluations >= 4 ? 'up' : item.total / item.totalEvaluations >= 3 ? 'stable' : 'down') : 'pending'
+    }))
+    .sort((a, b) => b.averageScore - a.averageScore || b.totalEvaluations - a.totalEvaluations || a.teacher.localeCompare(b.teacher))
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+
+  const courseMap = new Map(courses.map((item) => [item.courseCode, {
+    courseCode: item.courseCode,
+    course: item.courseName,
+    total: 0,
+    totalEvaluations: 0
+  }]));
+  evaluations.forEach((item) => {
+    const course = courseMap.get(item.courseCode) || {
+      courseCode: item.courseCode,
+      course: item.courseName,
+      total: 0,
+      totalEvaluations: 0
+    };
+    course.total += Number(item.courseOverallRating || 0);
+    course.totalEvaluations += 1;
+    courseMap.set(item.courseCode, course);
+  });
+  const courseLeaderboard = [...courseMap.values()]
+    .map((item) => ({ ...item, averageScore: item.totalEvaluations ? Number((item.total / item.totalEvaluations).toFixed(2)) : 0 }))
+    .sort((a, b) => b.averageScore - a.averageScore || b.totalEvaluations - a.totalEvaluations)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+
+  const assignmentParticipation = assignments.map((assignment) => {
+    const eligible = students.filter((student) => student.className === assignment.className).length;
+    const submitted = new Set(
+      evaluations.filter((item) => item.assignmentId === assignment.assignmentId).map((item) => item.studentId)
+    ).size;
+    return {
+      assignmentId: assignment.assignmentId,
+      courseCode: assignment.courseCode,
+      courseName: assignment.courseName,
+      className: assignment.className,
+      lecturerId: assignment.lecturerId,
+      lecturerName: assignment.lecturerName,
+      semester: assignment.semester,
+      eligible,
+      submitted,
+      pending: Math.max(eligible - submitted, 0),
+      participationRate: eligible ? Number(((submitted / eligible) * 100).toFixed(1)) : 0
+    };
+  });
+  const possibleSubmissions = assignmentParticipation.reduce((sum, item) => sum + item.eligible, 0);
+  const submittedAssignments = assignmentParticipation.reduce((sum, item) => sum + item.submitted, 0);
+  const participationRate = possibleSubmissions ? Number(((submittedAssignments / possibleSubmissions) * 100).toFixed(1)) : 0;
 
   return {
     totals: {
@@ -83,8 +170,9 @@ const getAnalyticsData = async (query = {}) => {
       participationRate,
       averageSatisfactionScore: avg(evaluations, 'courseOverallRating'),
       averageLecturerScore: avg(evaluations, 'lecturerOverallRating'),
-      topLecturer: lecturerRanking[0]?.name || 'N/A',
-      lowRatedCourses: courseSatisfaction.filter((item) => item.average < 3).length
+      topLecturer: teacherLeaderboard.find((item) => item.totalEvaluations)?.teacher || 'N/A',
+      lowRatedCourses: courseSatisfaction.filter((item) => item.average < 3).length,
+      activeSemesters: activeSemesters.length
     },
     lecturerRanking,
     courseSatisfaction,
@@ -92,10 +180,18 @@ const getAnalyticsData = async (query = {}) => {
     facultyComparison,
     semesterTrends,
     participationChart: [
-      { name: 'Submitted', value: evaluations.length },
-      { name: 'Pending', value: Math.max(possibleSubmissions - evaluations.length, 0) }
+      { name: 'Submitted', value: submittedAssignments },
+      { name: 'Not submitted', value: Math.max(possibleSubmissions - submittedAssignments, 0) }
     ],
+    assignmentParticipation,
     topLecturers: lecturerRanking.slice(0, 5),
+    teacherLeaderboard,
+    bestTeachers: teacherLeaderboard.slice(0, 10),
+    lowestPerformingTeachers: [...teacherLeaderboard].filter((item) => item.totalEvaluations > 0).reverse().slice(0, 10),
+    bestCourses: courseLeaderboard.slice(0, 10),
+    worstCourses: [...courseLeaderboard].reverse().slice(0, 10),
+    mostEvaluatedCourses: [...courseLeaderboard].sort((a, b) => b.totalEvaluations - a.totalEvaluations).slice(0, 10),
+    leastEvaluatedCourses: [...courseLeaderboard].sort((a, b) => a.totalEvaluations - b.totalEvaluations).slice(0, 10),
     lowCourses: [...courseSatisfaction].sort((a, b) => a.average - b.average).slice(0, 5),
     earlyWarnings: courseSatisfaction
       .filter((item) => item.average < 3)
@@ -174,8 +270,16 @@ const createEvaluation = async (req, res) => {
 router.get('/', protect, authorize('admin', 'department_head', 'dean', 'lecturer'), async (req, res) => {
   const filter = buildFilter(req.query);
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
-  const evaluations = await Evaluation.find(filter).sort({ submittedAt: -1 });
-  res.json({ data: evaluations });
+  const evaluations = await Evaluation.find(filter).sort({ submittedAt: -1 }).lean();
+  const studentIds = evaluations.map((item) => item.studentId);
+  const students = await Student.find({ studentId: { $in: studentIds } }).lean();
+  const studentMap = Object.fromEntries(students.map((student) => [student.studentId, student]));
+  res.json({
+    data: evaluations.map((item) => ({
+      ...item,
+      studentName: item.anonymous ? 'Anonymous' : studentMap[item.studentId]?.fullName || item.studentId
+    }))
+  });
 });
 
 router.post('/', protect, authorize('admin', 'student'), createEvaluation);

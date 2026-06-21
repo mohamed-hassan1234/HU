@@ -2,6 +2,7 @@ import {
   BarChart3,
   BookOpen,
   ClipboardList,
+  ClipboardPenLine,
   FileDown,
   FileText,
   Gauge,
@@ -13,12 +14,12 @@ import {
   Settings,
   Upload,
   UserRound,
-  Users,
-  X
+  Users
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import logo from '../hormuud logo.png';
 
 const adminLinks = [
   ['Dashboard', '/admin', Home],
@@ -28,8 +29,10 @@ const adminLinks = [
   ['Course Assignments', '/admin/assignments', ClipboardList],
   ['Evaluation Questions', '/admin/questions', HelpCircle],
   ['Evaluations', '/admin/evaluations', FileText],
+  ['Class Evaluations', '/admin/class-evaluations', ClipboardPenLine],
   ['Reports', '/admin/reports', FileDown],
   ['Analytics', '/admin/analytics', BarChart3],
+  ['Profile', '/admin/profile', UserRound],
   ['Import CSV', '/admin/import', Upload],
   ['Settings', '/admin/settings', Settings]
 ];
@@ -44,7 +47,9 @@ const studentLinks = [
 const lecturerLinks = [
   ['Dashboard', '/lecturer', Gauge],
   ['My Evaluation Summary', '/lecturer/summary', BarChart3],
+  ['Evaluate My Classes', '/lecturer/class-evaluation', ClipboardPenLine],
   ['Course Reports', '/lecturer/reports', FileText],
+  ['Profile', '/lecturer/profile', UserRound],
   ['Download Report', '/lecturer/download', FileDown]
 ];
 
@@ -59,6 +64,7 @@ export default function AppLayout() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const links = getLinks(user?.role);
+  const profilePath = user?.role === 'student' ? '/student/profile' : user?.role === 'lecturer' ? '/lecturer/profile' : '/admin/profile';
 
   const doLogout = () => {
     logout();
@@ -66,10 +72,15 @@ export default function AppLayout() {
   };
 
   const Sidebar = (
-    <aside className="flex h-full w-72 flex-col bg-huGreen text-white">
+    <aside className="flex h-full w-[min(18rem,calc(100vw-2rem))] flex-col bg-gradient-to-b from-huGreen to-huGreenDark text-white">
       <div className="border-b border-white/10 p-5">
-        <div className="text-xl font-extrabold">HUCEMS</div>
-        <div className="mt-1 text-sm text-white/75">Hormuud University</div>
+        <div className="flex items-center gap-3">
+          <img src={logo} alt="Hormuud University" className="h-12 w-12 rounded-xl bg-white object-contain p-1.5 shadow-lg" />
+          <div>
+            <div className="text-xl font-extrabold leading-tight">HUCEMS</div>
+            <div className="text-sm text-white/75">Hormuud University</div>
+          </div>
+        </div>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {links.map(([label, to, Icon]) => (
@@ -79,8 +90,8 @@ export default function AppLayout() {
             end={to === '/admin' || to === '/student' || to === '/lecturer'}
             onClick={() => setOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition ${
-                isActive ? 'bg-white text-huGreen' : 'text-white/82 hover:bg-white/10 hover:text-white'
+              `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                isActive ? 'bg-white text-huGreen shadow-sm' : 'text-white/82 hover:bg-white/10 hover:text-white'
               }`
             }
           >
@@ -90,7 +101,7 @@ export default function AppLayout() {
         ))}
       </nav>
       <div className="border-t border-white/10 p-3">
-        <button onClick={doLogout} className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium hover:bg-white/10">
+        <button onClick={doLogout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium hover:bg-white/10">
           <LogOut size={18} />
           Logout
         </button>
@@ -99,7 +110,7 @@ export default function AppLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-huBg">
+    <div className="brand-gradient min-h-screen">
       <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">{Sidebar}</div>
       {open ? (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -107,20 +118,19 @@ export default function AppLayout() {
           <div className="relative h-full">{Sidebar}</div>
         </div>
       ) : null}
-      <main className="lg:pl-72">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-stone-200 bg-white/90 px-4 backdrop-blur sm:px-6">
+      <main className="min-w-0 lg:pl-72">
+        <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between border-b border-white/70 bg-white/80 px-3 backdrop-blur-xl sm:px-6">
           <button className="btn-secondary px-3 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu size={18} />
           </button>
           <div className="hidden lg:block">
-            <p className="text-sm font-semibold text-stone-900">{profile?.fullName || user?.loginId}</p>
-            <p className="text-xs capitalize text-stone-500">{user?.role?.replace('_', ' ')}</p>
+            <p className="text-sm font-semibold text-huText">{profile?.fullName || user?.loginId}</p>
+            <p className="text-xs capitalize text-slate-500">{user?.role?.replace('_', ' ')}</p>
           </div>
-          <button className="btn-secondary px-3 lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu">
-            <X size={18} />
-          </button>
+          <div className="min-w-0 flex-1 px-3 lg:hidden"><p className="truncate text-center text-sm font-semibold text-huText">{profile?.fullName || user?.loginId}</p></div>
+          <NavLink className="btn-secondary px-3 lg:hidden" to={profilePath} aria-label="Open profile"><UserRound size={18} /></NavLink>
         </header>
-        <div className="p-4 sm:p-6">
+        <div className="min-w-0 overflow-x-hidden p-3 sm:p-5 xl:p-6">
           <Outlet />
         </div>
       </main>

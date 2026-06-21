@@ -5,13 +5,18 @@ const readCsv = (filePath) =>
   new Promise((resolve, reject) => {
     const rows = [];
     fs.createReadStream(filePath)
-      .pipe(csvParser())
+      .pipe(csvParser({
+        mapHeaders: ({ header }) => String(header).replace(/^\uFEFF/, '').trim().toLowerCase()
+      }))
       .on('data', (row) => rows.push(row))
       .on('end', () => {
         fs.unlink(filePath, () => {});
         resolve(rows);
       })
-      .on('error', reject);
+      .on('error', (error) => {
+        fs.unlink(filePath, () => {});
+        reject(error);
+      });
   });
 
 const escapeCsv = (value) => {
@@ -26,9 +31,9 @@ const sendCsv = (res, filename, rows, columns) => {
   const body = rows
     .map((row) => columns.map((column) => escapeCsv(row[column.key])).join(','))
     .join('\n');
-  res.header('Content-Type', 'text/csv');
+  res.header('Content-Type', 'text/csv; charset=utf-8');
   res.attachment(filename);
-  res.send([header, body].filter(Boolean).join('\n'));
+  res.send(`\uFEFF${[header, body].filter(Boolean).join('\n')}`);
 };
 
 const parseOptions = (value) => {

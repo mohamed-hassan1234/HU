@@ -8,27 +8,89 @@
 
 body {
   margin: 0;
-  background: #F7F4EF;
-  color: #17231f;
+  background: #F8FAFC;
+  color: #1F2937;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .input {
-  @apply w-full rounded-md border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-huGreen focus:ring-2 focus:ring-huGreen/15;
+  @apply w-full min-w-0 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-sm outline-none transition focus:border-huGreen focus:ring-2 focus:ring-huGreen/15;
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 rounded-md bg-huGreen px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex items-center justify-center gap-2 rounded-lg bg-huGreen px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-huGreenDark disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2 rounded-md border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-huGreen hover:text-huGreen disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-huGreen hover:text-huGreen disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .btn-danger {
-  @apply inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700;
+  @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700;
 }
 
 .panel {
-  @apply rounded-md border border-stone-200 bg-white shadow-soft;
+  @apply max-w-full rounded-xl border border-white/70 bg-white/90 shadow-soft backdrop-blur;
+}
+
+.glass-panel {
+  @apply rounded-xl border border-white/70 bg-white/75 shadow-glass backdrop-blur-xl;
+}
+
+.brand-gradient {
+  background:
+    radial-gradient(circle at top left, rgba(0, 135, 81, 0.18), transparent 34%),
+    radial-gradient(circle at 85% 10%, rgba(30, 115, 190, 0.16), transparent 32%),
+    linear-gradient(135deg, #f8fafc 0%, #ffffff 42%, #edf7f2 100%);
+}
+
+.confetti-piece {
+  animation: confetti-fall 900ms ease-out forwards;
+}
+
+.overflow-x-auto {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.overflow-x-auto > table {
+  width: 100%;
+  min-width: max-content;
+}
+
+.recharts-responsive-container {
+  min-width: 0 !important;
+}
+
+@media (max-width: 639px) {
+  .fixed.inset-0 {
+    overscroll-behavior: contain;
+  }
+
+  .panel {
+    border-radius: 8px;
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) rotate(0deg) scale(.7);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(120px) rotate(220deg) scale(1);
+  }
 }

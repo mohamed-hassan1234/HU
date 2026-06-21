@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, Eye, Pencil, Plus, Trash2, Upload } from 'lucide-react';
-import Swal from 'sweetalert2';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
 import EmptyState from '../../components/EmptyState';
@@ -25,6 +24,8 @@ export default function AdminAssignmentsPage() {
   const [form, setForm] = useState(blankForm);
   const [editing, setEditing] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [participation, setParticipation] = useState(null);
+  const [participationLoading, setParticipationLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadAssignments = async () => {
@@ -82,21 +83,18 @@ export default function AdminAssignmentsPage() {
     setModalOpen(true);
   };
 
-  const viewAssignment = (assignment) => {
-    Swal.fire({
-      title: assignment.assignmentId,
-      html: `
-        <div style="text-align:left;line-height:1.8">
-          <b>Course:</b> ${assignment.courseCode} - ${assignment.courseName}<br/>
-          <b>Lecturer:</b> ${assignment.lecturerId} - ${assignment.lecturerName}<br/>
-          <b>Class:</b> ${assignment.className}<br/>
-          <b>Semester:</b> ${assignment.semester}<br/>
-          <b>Academic Year:</b> ${assignment.academicYear}<br/>
-          <b>Status:</b> ${assignment.status}
-        </div>
-      `,
-      confirmButtonColor: '#006B3C'
-    });
+  const viewAssignment = async (assignment) => {
+    setParticipation({ assignment, totals: null, students: [] });
+    setParticipationLoading(true);
+    try {
+      const { data } = await api.get(`/assignments/${assignment._id}/participation`);
+      setParticipation(data);
+    } catch (error) {
+      setParticipation(null);
+      toast.fire({ icon: 'error', title: error.response?.data?.message || 'Participation details failed to load' });
+    } finally {
+      setParticipationLoading(false);
+    }
   };
 
   const save = async (event) => {
@@ -226,6 +224,49 @@ export default function AdminAssignmentsPage() {
         )}
       </div>
 
+      {participation ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white p-5">
+              <div>
+                <h2 className="text-xl font-black text-huText">{participation.assignment.courseCode} - {participation.assignment.courseName}</h2>
+                <p className="mt-1 text-sm text-slate-500">{participation.assignment.className} &bull; {participation.assignment.lecturerName} &bull; {participation.assignment.semester}</p>
+              </div>
+              <button className="btn-secondary" onClick={() => setParticipation(null)}>Close</button>
+            </div>
+            {participationLoading ? <div className="p-10 text-center text-sm text-slate-500">Loading class participation...</div> : (
+              <>
+                <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
+                  <ParticipationMetric label="Eligible Students" value={participation.totals?.eligible || 0} />
+                  <ParticipationMetric label="Submitted" value={participation.totals?.submitted || 0} color="text-huGreen" />
+                  <ParticipationMetric label="Not Submitted" value={participation.totals?.pending || 0} color="text-huBlue" />
+                  <ParticipationMetric label="Participation" value={`${participation.totals?.participationRate || 0}%`} />
+                </div>
+                <div className="overflow-x-auto border-t border-slate-100">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-600">
+                      <tr>{['Student', 'Student ID', 'Status', 'Submitted At', 'Course Score', 'Teacher Score'].map((item) => <th key={item} className="whitespace-nowrap px-4 py-3 font-semibold">{item}</th>)}</tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(participation.students || []).map((student) => (
+                        <tr key={student.studentId}>
+                          <td className="px-4 py-3 font-semibold text-slate-800">{student.studentName}</td>
+                          <td className="px-4 py-3">{student.studentId}</td>
+                          <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${student.status === 'submitted' ? 'bg-huGreen/10 text-huGreen' : 'bg-huBlue/10 text-huBlue'}`}>{student.status === 'submitted' ? 'Submitted' : 'Not submitted'}</span></td>
+                          <td className="whitespace-nowrap px-4 py-3">{student.submittedAt ? new Date(student.submittedAt).toLocaleString() : '-'}</td>
+                          <td className="px-4 py-3">{student.courseScore ? `${student.courseScore}/5` : '-'}</td>
+                          <td className="px-4 py-3">{student.teacherScore ? `${student.teacherScore}/5` : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {modalOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
           <form onSubmit={save} className="w-full max-w-3xl rounded-md bg-white p-5 shadow-soft">
@@ -279,6 +320,15 @@ export default function AdminAssignmentsPage() {
         </div>
       ) : null}
     </>
+  );
+}
+
+function ParticipationMetric({ label, value, color = 'text-huText' }) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-4">
+      <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
+      <p className={`mt-2 text-2xl font-black ${color}`}>{value}</p>
+    </div>
   );
 }
 

@@ -14,10 +14,30 @@ const { router: evaluationRoutes } = require('./routes/evaluationRoutes');
 const studentPortalRoutes = require('./routes/studentPortalRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const activityRoutes = require('./routes/activityRoutes');
+const classEvaluationRoutes = require('./routes/classEvaluationRoutes');
 
 const app = express();
+app.set('trust proxy', 1);
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'https://hu.elivateict.com', credentials: true }));
+const allowedOrigins = new Set((process.env.CLIENT_URL || 'https://www.ctes.hu.edu.so,https://ctes.hu.edu.so')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
+  .filter(Boolean));
+
+app.use(cors({
+  origin(origin, callback) {
+    const normalizedOrigin = origin?.replace(/\/+$/, '');
+    if (!origin || allowedOrigins.has(normalizedOrigin)) return callback(null, true);
+    const error = new Error(`Origin ${origin} is not allowed by CORS`);
+    error.statusCode = 403;
+    return callback(error);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Disposition'],
+  maxAge: 86400
+}));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
@@ -33,6 +53,7 @@ app.use('/api/evaluations', evaluationRoutes);
 app.use('/api/student', studentPortalRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/class-evaluations', classEvaluationRoutes);
 
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }));
 app.use((error, req, res, next) => {

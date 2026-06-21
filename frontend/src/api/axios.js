@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+const apiBaseUrl = (import.meta.env.VITE_API_URL || 'https://www.ctes.hu.edu.so/api').replace(/\/+$/, '');
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://hu.elivateict.com/api'
+  baseURL: apiBaseUrl,
+  timeout: 15000
 });
 
 api.interceptors.request.use((config) => {

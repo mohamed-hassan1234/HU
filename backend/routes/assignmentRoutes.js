@@ -1,8 +1,10 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const CourseAssignment = require('../models/CourseAssignment');
 const Course = require('../models/Course');
 const Lecturer = require('../models/Lecturer');
 const Student = require('../models/Student');
+const Evaluation = require('../models/Evaluation');
 const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
@@ -51,6 +53,45 @@ router.get('/', protect, authorize('admin', 'department_head', 'dean', 'lecturer
     CourseAssignment.countDocuments(query)
   ]);
   res.json({ data, total, page: Number(page), pages: Math.ceil(total / Number(limit)) || 1 });
+});
+
+router.get('/:id/participation', protect, authorize('admin', 'department_head', 'dean'), async (req, res) => {
+  const assignment = mongoose.isValidObjectId(req.params.id)
+    ? await CourseAssignment.findById(req.params.id).lean()
+    : await CourseAssignment.findOne({ assignmentId: req.params.id }).lean();
+  if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
+
+  const [students, evaluations] = await Promise.all([
+    Student.find({ className: assignment.className, status: 'active' }).sort({ fullName: 1 }).lean(),
+    Evaluation.find({ assignment: assignment._id }).sort({ submittedAt: -1 }).lean()
+  ]);
+  const evaluationByStudent = new Map(evaluations.map((item) => [item.studentId, item]));
+  const roster = students.map((student) => {
+    const evaluation = evaluationByStudent.get(student.studentId);
+    return {
+      studentId: student.studentId,
+      studentName: student.fullName,
+      faculty: student.faculty,
+      department: student.department,
+      status: evaluation ? 'submitted' : 'pending',
+      submittedAt: evaluation?.submittedAt || null,
+      courseScore: evaluation?.courseOverallRating || null,
+      teacherScore: evaluation?.lecturerOverallRating || null
+    };
+  });
+  const submitted = roster.filter((item) => item.status === 'submitted').length;
+  const eligible = roster.length;
+
+  res.json({
+    assignment,
+    totals: {
+      eligible,
+      submitted,
+      pending: Math.max(eligible - submitted, 0),
+      participationRate: eligible ? Number(((submitted / eligible) * 100).toFixed(1)) : 0
+    },
+    students: roster
+  });
 });
 
 const hydrateAssignment = async (payload) => {
