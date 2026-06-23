@@ -3,16 +3,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        huGreen: '#008751',
-        huGreenDark: '#006B3C',
-        huBlue: '#1E73BE',
+        huGreen: '#078B56',
+        huGreenDark: '#05633F',
+        huBlue: '#2E8BBD',
         huGold: '#C9932A',
-        huBg: '#F8FAFC',
-        huText: '#1F2937'
+        huBg: '#F3F6F9',
+        huText: '#263238'
       },
       boxShadow: {
-        soft: '0 18px 50px rgba(31, 41, 55, 0.10)',
-        glass: '0 24px 80px rgba(30, 115, 190, 0.14)'
+        soft: '0 2px 4px rgba(15, 34, 58, 0.06)',
+        glass: '0 8px 24px rgba(15, 34, 58, 0.10)'
       }
     }
   },

@@ -19,8 +19,12 @@ const classEvaluationRoutes = require('./routes/classEvaluationRoutes');
 const app = express();
 app.set('trust proxy', 1);
 
-const allowedOrigins = new Set((process.env.CLIENT_URL || 'https://www.ctes.hu.edu.so,https://ctes.hu.edu.so')
-  .split(',')
+const allowedOrigins = new Set([
+  'http://localhost:5173',
+  'https://www.ctes.hu.edu.so',
+  'https://ctes.hu.edu.so',
+  ...(process.env.CLIENT_URL || '').split(',')
+]
   .map((origin) => origin.trim().replace(/\/+$/, ''))
   .filter(Boolean));
 

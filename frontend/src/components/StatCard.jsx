@@ -1,18 +1,19 @@
 export default function StatCard({ title, value, icon: Icon, accent = 'green' }) {
   const color = accent === 'gold'
-    ? 'bg-huGold/10 text-huGold'
+    ? 'bg-amber-50 text-huGold ring-amber-100'
     : accent === 'blue'
-      ? 'bg-huBlue/10 text-huBlue'
-      : 'bg-huGreen/10 text-huGreen';
+      ? 'bg-sky-50 text-huBlue ring-sky-100'
+      : 'bg-emerald-50 text-huGreen ring-emerald-100';
   return (
-    <div className="panel p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-glass">
+    <div className="panel group relative overflow-hidden p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-glass">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-huGreen via-huBlue to-transparent opacity-70" />
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-          <p className="mt-2 text-2xl font-bold text-huText">{value ?? 0}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{title}</p>
+          <p className="mt-3 text-2xl font-semibold tracking-tight text-huText">{value ?? 0}</p>
         </div>
         {Icon ? (
-          <div className={`grid h-11 w-11 place-items-center rounded-xl ${color}`}>
+          <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ring-1 transition group-hover:scale-105 ${color}`}>
             <Icon size={21} />
           </div>
         ) : null}

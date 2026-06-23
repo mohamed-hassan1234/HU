@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const apiBaseUrl = (import.meta.env.VITE_API_URL || 'https://www.ctes.hu.edu.so/api').replace(/\/+$/, '');
+const defaultApiBaseUrl = import.meta.env.DEV
+  ? 'http://localhost:5020/api'
+  : 'https://www.ctes.hu.edu.so/api';
+
+const apiBaseUrl = (import.meta.env.VITE_API_URL || defaultApiBaseUrl).replace(/\/+$/, '');
 
 const api = axios.create({
   baseURL: apiBaseUrl,

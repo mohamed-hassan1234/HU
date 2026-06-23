@@ -10,7 +10,6 @@ const EvaluationsPage = lazy(() => import('./pages/admin/EvaluationsPage'));
 const ReportsPage = lazy(() => import('./pages/admin/ReportsPage'));
 const AnalyticsPage = lazy(() => import('./pages/admin/AnalyticsPage'));
 const ImportPage = lazy(() => import('./pages/admin/ImportPage'));
-const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
 const MyCoursesPage = lazy(() => import('./pages/student/MyCoursesPage'));
 const EvaluationFormPage = lazy(() => import('./pages/student/EvaluationFormPage'));
@@ -65,7 +64,6 @@ export default function App() {
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
               <Route path="/admin/profile" element={<ProfilePage />} />
               <Route path="/admin/import" element={<ImportPage />} />
-              <Route path="/admin/settings" element={<SettingsPage />} />
             </Route>
           </Route>
 
@@ -86,7 +84,6 @@ export default function App() {
               <Route path="/lecturer/class-evaluation" element={<ClassEvaluationPage />} />
               <Route path="/lecturer/reports" element={<LecturerReportsPage />} />
               <Route path="/lecturer/profile" element={<ProfilePage />} />
-              <Route path="/lecturer/download" element={<LecturerReportsPage />} />
             </Route>
           </Route>
 

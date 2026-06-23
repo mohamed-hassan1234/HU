@@ -29,7 +29,7 @@ export default function ImportPage() {
 
   return (
     <>
-      <PageHeader title="Import CSV" subtitle="Upload CSV files using the supported HUCEMS column formats." />
+      <PageHeader title="Import CSV" subtitle="Upload CSV files using the supported CTES column formats." />
       <div className="grid gap-4 lg:grid-cols-2">
         {imports.map(([label, endpoint, format]) => (
           <div key={endpoint} className="panel p-5">

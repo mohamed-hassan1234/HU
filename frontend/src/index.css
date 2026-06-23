@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,9 +10,11 @@
 
 body {
   margin: 0;
-  background: #F8FAFC;
-  color: #1F2937;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f3f6f9;
+  color: #263238;
+  font-family: "Roboto", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
 html,
@@ -22,35 +26,54 @@ body,
 }
 
 .input {
-  @apply w-full min-w-0 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-sm outline-none transition focus:border-huGreen focus:ring-2 focus:ring-huGreen/15;
+  @apply w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-huGreen focus:ring-2 focus:ring-huGreen/10;
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg bg-huGreen px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-huGreenDark disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex items-center justify-center gap-2 rounded-md bg-huGreen px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-huGreenDark hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-huGreen hover:text-huGreen disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-sm transition hover:border-huGreen/40 hover:bg-huGreen/5 hover:text-huGreen disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .btn-danger {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700;
+  @apply inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-red-700;
 }
 
 .panel {
-  @apply max-w-full rounded-xl border border-white/70 bg-white/90 shadow-soft backdrop-blur;
+  @apply max-w-full rounded-lg border border-slate-200/80 bg-white shadow-soft;
 }
 
 .glass-panel {
-  @apply rounded-xl border border-white/70 bg-white/75 shadow-glass backdrop-blur-xl;
+  @apply rounded-lg border border-slate-200/80 bg-white/95 shadow-glass backdrop-blur-xl;
 }
 
 .brand-gradient {
   background:
-    radial-gradient(circle at top left, rgba(0, 135, 81, 0.18), transparent 34%),
-    radial-gradient(circle at 85% 10%, rgba(30, 115, 190, 0.16), transparent 32%),
-    linear-gradient(135deg, #f8fafc 0%, #ffffff 42%, #edf7f2 100%);
+    radial-gradient(circle at top left, rgba(7, 139, 86, 0.08), transparent 28%),
+    radial-gradient(circle at 90% 8%, rgba(46, 139, 189, 0.07), transparent 25%),
+    #f3f6f9;
 }
+
+table tbody tr {
+  transition: background-color 160ms ease;
+}
+
+table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+table thead th {
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
 .confetti-piece {
   animation: confetti-fall 900ms ease-out forwards;
