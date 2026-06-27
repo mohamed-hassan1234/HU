@@ -10,6 +10,11 @@ const EvaluationsPage = lazy(() => import('./pages/admin/EvaluationsPage'));
 const ReportsPage = lazy(() => import('./pages/admin/ReportsPage'));
 const AnalyticsPage = lazy(() => import('./pages/admin/AnalyticsPage'));
 const ImportPage = lazy(() => import('./pages/admin/ImportPage'));
+const UserManagementPage = lazy(() => import('./pages/admin/UserManagementPage'));
+const RegistrationDashboard = lazy(() => import('./pages/registration/RegistrationDashboard'));
+const FacultyManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.FacultyManagementPage })));
+const DepartmentManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.DepartmentManagementPage })));
+const ClassManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.ClassManagementPage })));
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
 const MyCoursesPage = lazy(() => import('./pages/student/MyCoursesPage'));
 const EvaluationFormPage = lazy(() => import('./pages/student/EvaluationFormPage'));
@@ -53,10 +58,14 @@ export default function App() {
           <Route element={<ProtectedRoute roles={['admin', 'department_head', 'dean']} />}>
             <Route element={<AppLayout />}>
               <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/users" element={<UserManagementPage />} />
               <Route path="/admin/students" element={<StudentsPage />} />
               <Route path="/admin/lecturers" element={<LecturersPage />} />
               <Route path="/admin/courses" element={<CoursesPage />} />
               <Route path="/admin/assignments" element={<AssignmentsPage />} />
+              <Route path="/admin/faculties" element={<FacultyManagementPage />} />
+              <Route path="/admin/departments" element={<DepartmentManagementPage />} />
+              <Route path="/admin/classes" element={<ClassManagementPage />} />
               <Route path="/admin/questions" element={<QuestionsPage />} />
               <Route path="/admin/evaluations" element={<EvaluationsPage />} />
               <Route path="/admin/class-evaluations" element={<AdminClassEvaluationsPage />} />
@@ -64,6 +73,20 @@ export default function App() {
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
               <Route path="/admin/profile" element={<ProfilePage />} />
               <Route path="/admin/import" element={<ImportPage />} />
+            </Route>
+          </Route>
+
+          <Route element={<ProtectedRoute roles={['registration']} />}>
+            <Route element={<AppLayout />}>
+              <Route path="/registration" element={<RegistrationDashboard />} />
+              <Route path="/registration/students" element={<StudentsPage />} />
+              <Route path="/registration/lecturers" element={<LecturersPage />} />
+              <Route path="/registration/courses" element={<CoursesPage />} />
+              <Route path="/registration/assignments" element={<AssignmentsPage />} />
+              <Route path="/registration/questions" element={<QuestionsPage />} />
+              <Route path="/registration/reports" element={<ReportsPage />} />
+              <Route path="/registration/analytics" element={<AnalyticsPage />} />
+              <Route path="/registration/profile" element={<ProfilePage />} />
             </Route>
           </Route>
 

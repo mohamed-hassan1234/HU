@@ -9,9 +9,10 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
 
 const router = express.Router();
-const adminOnly = [protect, authorize('admin')];
+const manageAssignments = [protect, authorize('admin', 'registration')];
 
 const columns = [
   { header: 'assignment_id', key: 'assignmentId' },
@@ -29,7 +30,12 @@ const toAssignment = (body) => ({
   assignmentId: body.assignmentId || body.assignment_id,
   courseCode: body.courseCode || body.course_code,
   courseName: body.courseName || body.course_name,
+  faculty: body.faculty,
+  facultyId: body.facultyId || body.faculty_id,
+  department: body.department,
+  departmentId: body.departmentId || body.department_id,
   className: body.className || body.class_name,
+  classId: body.classId || body.class_id,
   semester: body.semester,
   academicYear: body.academicYear || body.academic_year,
   lecturerId: body.lecturerId || body.lecturer_id,
@@ -37,14 +43,16 @@ const toAssignment = (body) => ({
   status: String(body.status || 'active').toLowerCase()
 });
 
-router.get('/', protect, authorize('admin', 'department_head', 'dean', 'lecturer'), async (req, res) => {
-  const { search = '', page = 1, limit = 10, courseCode, lecturerId, className, semester, academicYear } = req.query;
-  const query = {};
+router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+  const { search = '', page = 1, limit = 10, courseCode, lecturerId, className, classId, semester, academicYear, departmentId } = req.query;
+  const query = scopedQuery(req, {});
   if (req.user.role === 'lecturer') query.lecturerId = req.user.loginId;
   if (search) query.$or = [{ courseCode: new RegExp(search, 'i') }, { courseName: new RegExp(search, 'i') }];
   if (courseCode) query.courseCode = courseCode;
   if (lecturerId && req.user.role !== 'lecturer') query.lecturerId = lecturerId;
   if (className) query.className = className;
+  if (classId) query.classId = classId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   if (semester) query.semester = semester;
   if (academicYear) query.academicYear = academicYear;
   const skip = (Number(page) - 1) * Number(limit);
@@ -55,14 +63,19 @@ router.get('/', protect, authorize('admin', 'department_head', 'dean', 'lecturer
   res.json({ data, total, page: Number(page), pages: Math.ceil(total / Number(limit)) || 1 });
 });
 
-router.get('/:id/participation', protect, authorize('admin', 'department_head', 'dean'), async (req, res) => {
+router.get('/:id/participation', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
   const assignment = mongoose.isValidObjectId(req.params.id)
     ? await CourseAssignment.findById(req.params.id).lean()
     : await CourseAssignment.findOne({ assignmentId: req.params.id }).lean();
   if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, assignment.departmentId);
 
   const [students, evaluations] = await Promise.all([
-    Student.find({ className: assignment.className, status: 'active' }).sort({ fullName: 1 }).lean(),
+    Student.find({
+      className: assignment.className,
+      ...(assignment.departmentId ? { departmentId: assignment.departmentId } : {}),
+      status: 'active'
+    }).sort({ fullName: 1 }).lean(),
     Evaluation.find({ assignment: assignment._id }).sort({ submittedAt: -1 }).lean()
   ]);
   const evaluationByStudent = new Map(evaluations.map((item) => [item.studentId, item]));
@@ -95,14 +108,24 @@ router.get('/:id/participation', protect, authorize('admin', 'department_head', 
 });
 
 const hydrateAssignment = async (payload) => {
+  const master = await hydrateFacultyDepartment({
+    facultyId: payload.facultyId,
+    departmentId: payload.departmentId,
+    classId: payload.classId,
+    fallback: payload
+  });
   const [course, lecturer] = await Promise.all([
     Course.findOne({ courseCode: payload.courseCode }),
     Lecturer.findOne({ lecturerId: payload.lecturerId })
   ]);
   if (!course) throw Object.assign(new Error('Selected course was not found'), { statusCode: 400 });
   if (!lecturer) throw Object.assign(new Error('Selected lecturer was not found'), { statusCode: 400 });
+  if (master.departmentId && lecturer.departmentId && String(lecturer.departmentId) !== String(master.departmentId)) {
+    throw Object.assign(new Error('Selected lecturer does not belong to the selected department'), { statusCode: 400 });
+  }
   return {
     ...payload,
+    ...master,
     courseName: course.courseName,
     lecturerName: lecturer.fullName
   };
@@ -126,6 +149,7 @@ const ensureUniqueAssignment = async (payload, ignoreId) => {
 const ensureStudentsExistForAssignment = async (payload) => {
   const exists = await Student.exists({
     className: payload.className,
+    ...(payload.departmentId ? { departmentId: payload.departmentId } : {}),
     status: { $ne: 'inactive' }
   });
   if (!exists) {
@@ -136,9 +160,12 @@ const ensureStudentsExistForAssignment = async (payload) => {
   }
 };
 
-router.post('/', adminOnly, async (req, res) => {
+router.post('/', manageAssignments, async (req, res) => {
   try {
-    const payload = await hydrateAssignment(toAssignment(req.body));
+    const base = toAssignment(req.body);
+    if (req.user.role === 'registration') base.departmentId = userDepartmentId(req.user);
+    const payload = await hydrateAssignment(base);
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload);
     const assignment = await CourseAssignment.create(payload);
@@ -149,9 +176,15 @@ router.post('/', adminOnly, async (req, res) => {
   }
 });
 
-router.put('/:id', adminOnly, async (req, res) => {
+router.put('/:id', manageAssignments, async (req, res) => {
   try {
-    const payload = await hydrateAssignment(toAssignment(req.body));
+    const current = await CourseAssignment.findById(req.params.id).lean();
+    if (!current) return res.status(404).json({ message: 'Assignment not found' });
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+    const base = toAssignment(req.body);
+    if (req.user.role === 'registration') base.departmentId = userDepartmentId(req.user);
+    const payload = await hydrateAssignment(base);
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload, req.params.id);
     const assignment = await CourseAssignment.findByIdAndUpdate(req.params.id, payload, {
@@ -166,19 +199,25 @@ router.put('/:id', adminOnly, async (req, res) => {
   }
 });
 
-router.delete('/:id', adminOnly, async (req, res) => {
+router.delete('/:id', manageAssignments, async (req, res) => {
+  const current = await CourseAssignment.findById(req.params.id).lean();
+  if (!current) return res.status(404).json({ message: 'Assignment not found' });
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
   const assignment = await CourseAssignment.findByIdAndDelete(req.params.id);
   if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
   await logActivity(req, 'delete', 'assignment', assignment.assignmentId);
   res.json({ message: 'Assignment deleted' });
 });
 
-router.post('/import-csv', adminOnly, upload.single('file'), async (req, res) => {
+router.post('/import-csv', manageAssignments, upload.single('file'), async (req, res) => {
   const rows = await readCsv(req.file.path);
   let imported = 0;
   let skipped = 0;
   for (const row of rows) {
     let payload = toAssignment(row);
+    if (req.user.role === 'registration') payload.departmentId = userDepartmentId(req.user);
+    payload = await hydrateAssignment(payload);
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
     if (!payload.assignmentId || !payload.courseCode) continue;
     const duplicate = await CourseAssignment.findOne({
       courseCode: payload.courseCode,
@@ -206,8 +245,8 @@ router.post('/import-csv', adminOnly, upload.single('file'), async (req, res) =>
   res.json({ message: 'Assignments imported', imported, skipped });
 });
 
-router.get('/export-csv', adminOnly, async (req, res) => {
-  sendCsv(res, 'course_assignments.csv', await CourseAssignment.find().lean(), columns);
+router.get('/export-csv', manageAssignments, async (req, res) => {
+  sendCsv(res, 'course_assignments.csv', await CourseAssignment.find(scopedQuery(req, {})).lean(), columns);
 });
 
 module.exports = router;

@@ -4,12 +4,20 @@ const bcrypt = require('bcryptjs');
 const userSchema = new mongoose.Schema(
   {
     loginId: { type: String, required: true, unique: true, trim: true },
+    fullName: { type: String, trim: true },
+    email: { type: String, trim: true, lowercase: true, sparse: true },
     password: { type: String, required: true },
     role: {
       type: String,
-      enum: ['admin', 'student', 'lecturer', 'department_head', 'dean'],
+      enum: ['admin', 'registration', 'student', 'lecturer', 'department_head', 'dean'],
       required: true
     },
+    facultyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty' },
+    faculty: { type: String, trim: true },
+    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+    department: { type: String, trim: true },
+    permissions: [{ type: String, trim: true }],
+    lastLogin: Date,
     status: { type: String, enum: ['active', 'inactive'], default: 'active' }
   },
   { timestamps: true }

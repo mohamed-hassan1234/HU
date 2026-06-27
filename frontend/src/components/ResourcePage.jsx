@@ -4,6 +4,7 @@ import api from '../api/axios';
 import { confirmDelete, toast } from '../utils/alerts';
 import EmptyState from './EmptyState';
 import PageHeader from './PageHeader';
+import { useAuth } from '../context/AuthContext';
 
 const initialValues = (fields) =>
   fields.reduce((acc, field) => {
@@ -12,6 +13,7 @@ const initialValues = (fields) =>
   }, {});
 
 export default function ResourcePage({ title, subtitle, endpoint, fields, columns, csvEndpoint }) {
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -20,6 +22,7 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
   const [modalOpen, setModalOpen] = useState(false);
 
   const visibleRows = useMemo(() => rows, [rows]);
+  const readOnly = user?.role === 'registration' && endpoint === '/courses';
 
   const load = async () => {
     setLoading(true);
@@ -106,7 +109,7 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
         title={title}
         subtitle={subtitle}
         actions={
-          <>
+          readOnly ? null : <>
             <label className="btn-secondary cursor-pointer">
               <Upload size={16} />
               Import CSV
@@ -143,7 +146,7 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
                   {columns.map((column) => (
                     <th key={column.key} className="whitespace-nowrap px-4 py-3 text-left font-semibold text-slate-500">{column.label}</th>
                   ))}
-                  <th className="px-4 py-3 text-right font-semibold text-slate-500">Actions</th>
+                  {!readOnly ? <th className="px-4 py-3 text-right font-semibold text-slate-500">Actions</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
@@ -152,10 +155,10 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
                     {columns.map((column) => (
                       <td key={column.key} className="whitespace-nowrap px-4 py-3 text-slate-600">{Array.isArray(row[column.key]) ? row[column.key].join(', ') : row[column.key]}</td>
                     ))}
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                    {!readOnly ? <td className="whitespace-nowrap px-4 py-3 text-right">
                       <button className="btn-secondary mr-2 px-3" onClick={() => openEdit(row)} aria-label="Edit"><Pencil size={15} /></button>
                       <button className="btn-danger px-3" onClick={() => remove(row)} aria-label="Delete"><Trash2 size={15} /></button>
-                    </td>
+                    </td> : null}
                   </tr>
                 ))}
               </tbody>

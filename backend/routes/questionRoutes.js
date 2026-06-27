@@ -6,7 +6,7 @@ const { readCsv, sendCsv, parseOptions } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
 
 const router = express.Router();
-const adminOnly = [protect, authorize('admin')];
+const questionManagers = [protect, authorize('admin', 'registration')];
 
 const columns = [
   { header: 'question_id', key: 'questionId' },
@@ -38,13 +38,13 @@ router.get('/', protect, async (req, res) => {
   res.json({ data });
 });
 
-router.post('/', adminOnly, async (req, res) => {
+router.post('/', questionManagers, async (req, res) => {
   const question = await EvaluationQuestion.create(toQuestion(req.body));
   await logActivity(req, 'create', 'question', question.questionId);
   res.status(201).json(question);
 });
 
-router.put('/:id', adminOnly, async (req, res) => {
+router.put('/:id', questionManagers, async (req, res) => {
   const question = await EvaluationQuestion.findByIdAndUpdate(req.params.id, toQuestion(req.body), {
     new: true,
     runValidators: true
@@ -54,14 +54,14 @@ router.put('/:id', adminOnly, async (req, res) => {
   res.json(question);
 });
 
-router.delete('/:id', adminOnly, async (req, res) => {
+router.delete('/:id', questionManagers, async (req, res) => {
   const question = await EvaluationQuestion.findByIdAndDelete(req.params.id);
   if (!question) return res.status(404).json({ message: 'Question not found' });
   await logActivity(req, 'delete', 'question', question.questionId);
   res.json({ message: 'Question deleted' });
 });
 
-router.post('/import-csv', adminOnly, upload.single('file'), async (req, res) => {
+router.post('/import-csv', questionManagers, upload.single('file'), async (req, res) => {
   const rows = await readCsv(req.file.path);
   let imported = 0;
   for (const row of rows) {
@@ -78,7 +78,7 @@ router.post('/import-csv', adminOnly, upload.single('file'), async (req, res) =>
   res.json({ message: 'Questions imported', imported });
 });
 
-router.get('/export-csv', adminOnly, async (req, res) => {
+router.get('/export-csv', questionManagers, async (req, res) => {
   sendCsv(res, 'evaluation_questions.csv', await EvaluationQuestion.find().lean(), columns);
 });
 

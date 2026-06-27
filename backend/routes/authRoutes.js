@@ -36,7 +36,15 @@ const getProfile = async (user) => {
       assignedCourses: assignments.map((item) => `${item.courseCode} - ${item.courseName}`).join(', ') || 'None'
     };
   }
-  return null;
+  return {
+    fullName: user.fullName,
+    email: user.email,
+    faculty: user.faculty,
+    facultyId: user.facultyId,
+    department: user.department,
+    departmentId: user.departmentId,
+    permissions: user.permissions || []
+  };
 };
 
 router.post('/login', async (req, res) => {
@@ -48,6 +56,9 @@ router.post('/login', async (req, res) => {
 
   const valid = await user.comparePassword(password);
   if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
+
+  user.lastLogin = new Date();
+  await user.save();
 
   const safeUser = user.toObject();
   delete safeUser.password;

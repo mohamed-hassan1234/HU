@@ -5,6 +5,7 @@ const AuthContext = createContext(null);
 
 export const roleHome = {
   admin: '/admin',
+  registration: '/registration',
   student: '/student',
   lecturer: '/lecturer',
   department_head: '/admin/reports',

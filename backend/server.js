@@ -5,6 +5,10 @@ const morgan = require('morgan');
 const connectDB = require('./config/db');
 
 const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
+const facultyRoutes = require('./routes/facultyRoutes');
+const departmentRoutes = require('./routes/departmentRoutes');
+const classRoutes = require('./routes/classRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const lecturerRoutes = require('./routes/lecturerRoutes');
 const courseRoutes = require('./routes/courseRoutes');
@@ -48,6 +52,10 @@ app.use(morgan('dev'));
 
 app.get('/', (req, res) => res.json({ name: 'HUCEMS API', status: 'running' }));
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/faculties', facultyRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/classes', classRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/lecturers', lecturerRoutes);
 app.use('/api/courses', courseRoutes);

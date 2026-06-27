@@ -8,9 +8,9 @@ import { confirmDelete, toast } from '../../utils/alerts';
 const blankForm = {
   studentId: '',
   fullName: '',
-  faculty: 'Faculty of Information Technology',
-  department: 'Information Technology',
-  className: 'BIT-4A',
+  facultyId: '',
+  departmentId: '',
+  classId: '',
   password: '123456',
   status: 'active'
 };
@@ -18,6 +18,9 @@ const blankForm = {
 export default function AdminStudentsPage() {
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [faculties, setFaculties] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [masterClasses, setMasterClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
   const [showClassFilter, setShowClassFilter] = useState(false);
   const [search, setSearch] = useState('');
@@ -54,6 +57,12 @@ export default function AdminStudentsPage() {
 
   useEffect(() => {
     loadStudents();
+    Promise.all([api.get('/faculties'), api.get('/departments'), api.get('/classes')])
+      .then(([facultyRes, departmentRes, classRes]) => {
+        setFaculties(facultyRes.data.data || []);
+        setDepartments(departmentRes.data.data || []);
+        setMasterClasses(classRes.data.data || []);
+      });
   }, []);
 
   const groupedStudents = useMemo(() => {
@@ -67,7 +76,13 @@ export default function AdminStudentsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ ...blankForm, className: selectedClass || blankForm.className });
+    const selectedMasterClass = masterClasses.find((item) => item.className === selectedClass);
+    setForm({
+      ...blankForm,
+      facultyId: selectedMasterClass?.faculty || '',
+      departmentId: selectedMasterClass?.department || '',
+      classId: selectedMasterClass?._id || ''
+    });
     setModalOpen(true);
   };
 
@@ -76,9 +91,9 @@ export default function AdminStudentsPage() {
     setForm({
       studentId: student.studentId || '',
       fullName: student.fullName || '',
-      faculty: student.faculty || '',
-      department: student.department || '',
-      className: student.className || '',
+      facultyId: student.facultyId || '',
+      departmentId: student.departmentId || '',
+      classId: student.classId || '',
       password: '',
       status: student.status || 'active'
     });
@@ -140,6 +155,9 @@ export default function AdminStudentsPage() {
     link.click();
     window.URL.revokeObjectURL(url);
   };
+
+  const availableDepartments = departments.filter((item) => !form.facultyId || String(item.faculty) === String(form.facultyId));
+  const availableClasses = masterClasses.filter((item) => !form.departmentId || String(item.department) === String(form.departmentId));
 
   return (
     <>
@@ -237,9 +255,24 @@ export default function AdminStudentsPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Student ID"><input className="input" value={form.studentId} onChange={(event) => setForm({ ...form, studentId: event.target.value })} required /></Field>
               <Field label="Full Name"><input className="input" value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} required /></Field>
-              <Field label="Faculty"><input className="input" value={form.faculty} onChange={(event) => setForm({ ...form, faculty: event.target.value })} required /></Field>
-              <Field label="Department"><input className="input" value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} required /></Field>
-              <Field label="Class Name"><input className="input" value={form.className} onChange={(event) => setForm({ ...form, className: event.target.value })} required /></Field>
+              <Field label="Faculty">
+                <select className="input" value={form.facultyId} onChange={(event) => setForm({ ...form, facultyId: event.target.value, departmentId: '', classId: '' })} required>
+                  <option value="">Select Faculty</option>
+                  {faculties.map((faculty) => <option key={faculty._id} value={faculty._id}>{faculty.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Department">
+                <select className="input" value={form.departmentId} onChange={(event) => setForm({ ...form, departmentId: event.target.value, classId: '' })} required>
+                  <option value="">Select Department</option>
+                  {availableDepartments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Class">
+                <select className="input" value={form.classId} onChange={(event) => setForm({ ...form, classId: event.target.value })} required>
+                  <option value="">Select Class</option>
+                  {availableClasses.map((classItem) => <option key={classItem._id} value={classItem._id}>{classItem.className} / {classItem.semester} / {classItem.academicYear}</option>)}
+                </select>
+              </Field>
               <Field label={editing ? 'New Password' : 'Password'}><input className="input" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required={!editing} /></Field>
               <Field label="Status">
                 <select className="input" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>

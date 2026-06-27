@@ -10,9 +10,10 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
 
 const router = express.Router();
-const adminOnly = [protect, authorize('admin')];
+const manageLecturers = [protect, authorize('admin', 'registration')];
 
 const columns = [
   { header: 'lecturer_id', key: 'lecturerId' },
@@ -23,15 +24,36 @@ const columns = [
 const toLecturer = (body) => ({
   lecturerId: body.lecturerId || body.lecturer_id,
   fullName: body.fullName || body.full_name || body.lecturer_name,
+  faculty: body.faculty,
+  facultyId: body.facultyId || body.faculty_id,
+  department: body.department,
+  departmentId: body.departmentId || body.department_id,
   password: body.password,
   status: String(body.status || 'active').toLowerCase()
 });
+
+const hydrateLecturer = async (body, req) => {
+  const base = toLecturer(body);
+  if (req?.user?.role === 'registration') base.departmentId = userDepartmentId(req.user);
+  const hydrated = await hydrateFacultyDepartment({
+    facultyId: base.facultyId,
+    departmentId: base.departmentId,
+    fallback: base
+  });
+  if (req?.user?.role === 'registration') assertCanAccessDepartment(req, hydrated.departmentId);
+  return { ...base, ...hydrated };
+};
 
 const upsertLecturerUser = async (lecturer, password) => {
   const user = await User.findOne({ loginId: lecturer.lecturerId });
   if (user) {
     user.role = 'lecturer';
     user.status = lecturer.status;
+    user.fullName = lecturer.fullName;
+    user.faculty = lecturer.faculty;
+    user.facultyId = lecturer.facultyId;
+    user.department = lecturer.department;
+    user.departmentId = lecturer.departmentId;
     if (password) user.password = password;
     await user.save();
   } else {
@@ -39,15 +61,22 @@ const upsertLecturerUser = async (lecturer, password) => {
       loginId: lecturer.lecturerId,
       password: password || lecturer.lecturerId,
       role: 'lecturer',
+      fullName: lecturer.fullName,
+      faculty: lecturer.faculty,
+      facultyId: lecturer.facultyId,
+      department: lecturer.department,
+      departmentId: lecturer.departmentId,
       status: lecturer.status
     });
   }
 };
 
-router.get('/', protect, authorize('admin', 'department_head', 'dean'), async (req, res) => {
-  const { search = '', page = 1, limit = 10 } = req.query;
-  const query = {};
+router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+  const { search = '', page = 1, limit = 10, facultyId, departmentId } = req.query;
+  const query = scopedQuery(req, {});
   if (search) query.$or = [{ lecturerId: new RegExp(search, 'i') }, { fullName: new RegExp(search, 'i') }];
+  if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     Lecturer.find(query).sort({ fullName: 1 }).skip(skip).limit(Number(limit)),
@@ -56,8 +85,8 @@ router.get('/', protect, authorize('admin', 'department_head', 'dean'), async (r
   res.json({ data, total, page: Number(page), pages: Math.ceil(total / Number(limit)) || 1 });
 });
 
-router.post('/', adminOnly, async (req, res) => {
-  const payload = toLecturer(req.body);
+router.post('/', manageLecturers, async (req, res) => {
+  const payload = await hydrateLecturer(req.body, req);
   if (payload.password) payload.password = await bcrypt.hash(payload.password, 10);
   const lecturer = await Lecturer.create(payload);
   await upsertLecturerUser(lecturer, req.body.password || payload.lecturerId);
@@ -65,8 +94,11 @@ router.post('/', adminOnly, async (req, res) => {
   res.status(201).json(lecturer);
 });
 
-router.put('/:id', adminOnly, async (req, res) => {
-  const payload = toLecturer(req.body);
+router.put('/:id', manageLecturers, async (req, res) => {
+  const current = await Lecturer.findById(req.params.id);
+  if (!current) return res.status(404).json({ message: 'Lecturer not found' });
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+  const payload = await hydrateLecturer(req.body, req);
   if (!payload.password) delete payload.password;
   else payload.password = await bcrypt.hash(payload.password, 10);
   const lecturer = await Lecturer.findByIdAndUpdate(req.params.id, payload, {
@@ -79,7 +111,10 @@ router.put('/:id', adminOnly, async (req, res) => {
   res.json(lecturer);
 });
 
-router.delete('/:id', adminOnly, async (req, res) => {
+router.delete('/:id', manageLecturers, async (req, res) => {
+  const current = await Lecturer.findById(req.params.id);
+  if (!current) return res.status(404).json({ message: 'Lecturer not found' });
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
   const lecturer = await Lecturer.findByIdAndDelete(req.params.id);
   if (!lecturer) return res.status(404).json({ message: 'Lecturer not found' });
   await User.deleteOne({ loginId: lecturer.lecturerId });
@@ -87,11 +122,11 @@ router.delete('/:id', adminOnly, async (req, res) => {
   res.json({ message: 'Lecturer deleted' });
 });
 
-router.post('/import-csv', adminOnly, upload.single('file'), async (req, res) => {
+router.post('/import-csv', manageLecturers, upload.single('file'), async (req, res) => {
   const rows = await readCsv(req.file.path);
   let imported = 0;
   for (const row of rows) {
-    const payload = toLecturer(row);
+    const payload = await hydrateLecturer(row, req);
     if (!payload.lecturerId || !payload.fullName) continue;
     const loginPassword = row.password || payload.lecturerId;
     if (payload.password) payload.password = await bcrypt.hash(payload.password, 10);
@@ -107,8 +142,8 @@ router.post('/import-csv', adminOnly, upload.single('file'), async (req, res) =>
   res.json({ message: 'Lecturers imported', imported });
 });
 
-router.get('/export-csv', adminOnly, async (req, res) => {
-  sendCsv(res, 'lecturers.csv', await Lecturer.find().lean(), columns);
+router.get('/export-csv', manageLecturers, async (req, res) => {
+  sendCsv(res, 'lecturers.csv', await Lecturer.find(scopedQuery(req, {})).lean(), columns);
 });
 
 const average = (rows, key) => {

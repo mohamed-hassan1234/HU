@@ -8,12 +8,13 @@ const Course = require('../models/Course');
 const { protect, authorize } = require('../middleware/auth');
 const { sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
+const { scopedQuery } = require('../utils/accessControl');
 
 const router = express.Router();
 
 const buildFilter = (query) => {
   const filter = {};
-  ['assignmentId', 'faculty', 'department', 'courseCode', 'lecturerId', 'className', 'semester', 'academicYear'].forEach((key) => {
+  ['assignmentId', 'faculty', 'facultyId', 'department', 'departmentId', 'courseCode', 'lecturerId', 'className', 'classId', 'semester', 'academicYear'].forEach((key) => {
     if (query[key]) filter[key] = query[key];
   });
   if (query.dateFrom || query.dateTo) {
@@ -48,12 +49,18 @@ const getAnalyticsData = async (query = {}) => {
   const studentFilter = {
     status: 'active',
     ...(filter.faculty ? { faculty: filter.faculty } : {}),
+    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
     ...(filter.department ? { department: filter.department } : {}),
-    ...(filter.className ? { className: filter.className } : {})
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+    ...(filter.className ? { className: filter.className } : {}),
+    ...(filter.classId ? { classId: filter.classId } : {})
   };
   const assignmentFilter = {
     status: { $ne: 'inactive' },
+    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
     ...(filter.className ? { className: filter.className } : {}),
+    ...(filter.classId ? { classId: filter.classId } : {}),
     ...(filter.semester ? { semester: filter.semester } : {}),
     ...(filter.academicYear ? { academicYear: filter.academicYear } : {}),
     ...(filter.courseCode ? { courseCode: filter.courseCode } : {}),
@@ -76,6 +83,7 @@ const getAnalyticsData = async (query = {}) => {
   const courseSatisfaction = groupAverage(evaluations, 'courseName', 'courseOverallRating');
   const departmentComparison = groupAverage(evaluations, 'department', 'courseOverallRating');
   const facultyComparison = groupAverage(evaluations, 'faculty', 'courseOverallRating');
+  const classComparison = groupAverage(evaluations, 'className', 'courseOverallRating');
   const semesterTrends = groupAverage(evaluations, 'semester', 'courseOverallRating');
   const activeSemesters = [...new Set(assignments.map((item) => item.semester).filter(Boolean))];
   const studentFacultyByClass = new Map();
@@ -178,6 +186,22 @@ const getAnalyticsData = async (query = {}) => {
     courseSatisfaction,
     departmentComparison,
     facultyComparison,
+    classComparison,
+    departmentRankings: departmentComparison,
+    facultyRankings: facultyComparison,
+    universityRankings: teacherLeaderboard,
+    bestDepartment: departmentComparison[0] || null,
+    worstDepartment: [...departmentComparison].reverse().find((item) => item.submissions > 0) || null,
+    bestFaculty: facultyComparison[0] || null,
+    worstFaculty: [...facultyComparison].reverse().find((item) => item.submissions > 0) || null,
+    highestParticipation: [...assignmentParticipation].sort((a, b) => b.participationRate - a.participationRate)[0] || null,
+    lowestParticipation: [...assignmentParticipation].sort((a, b) => a.participationRate - b.participationRate)[0] || null,
+    highestRatedLecturer: teacherLeaderboard.find((item) => item.totalEvaluations > 0) || null,
+    lowestRatedLecturer: [...teacherLeaderboard].reverse().find((item) => item.totalEvaluations > 0) || null,
+    highestRatedCourse: courseLeaderboard.find((item) => item.totalEvaluations > 0) || null,
+    lowestRatedCourse: [...courseLeaderboard].reverse().find((item) => item.totalEvaluations > 0) || null,
+    highestRatedClass: classComparison[0] || null,
+    lowestRatedClass: [...classComparison].reverse().find((item) => item.submissions > 0) || null,
     semesterTrends,
     participationChart: [
       { name: 'Submitted', value: submittedAssignments },
@@ -226,6 +250,7 @@ const createEvaluation = async (req, res) => {
   const assignment = await CourseAssignment.findOne({
     ...(req.body.assignmentId ? { assignmentId: req.body.assignmentId } : { courseCode: req.body.courseCode }),
     className: student.className,
+    ...(student.departmentId ? { departmentId: student.departmentId } : {}),
     status: { $ne: 'inactive' }
   });
   if (!assignment) return res.status(404).json({ message: 'Course assignment not found for this student' });
@@ -245,8 +270,11 @@ const createEvaluation = async (req, res) => {
     lecturerId: assignment.lecturerId,
     lecturerName: assignment.lecturerName,
     faculty: student.faculty,
+    facultyId: student.facultyId || assignment.facultyId,
     department: student.department,
+    departmentId: student.departmentId || assignment.departmentId,
     className: assignment.className,
+    classId: student.classId || assignment.classId,
     semester: assignment.semester,
     academicYear: assignment.academicYear,
     responses: req.body.responses || [],
@@ -267,8 +295,8 @@ const createEvaluation = async (req, res) => {
   res.status(201).json(evaluation);
 };
 
-router.get('/', protect, authorize('admin', 'department_head', 'dean', 'lecturer'), async (req, res) => {
-  const filter = buildFilter(req.query);
+router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+  const filter = buildFilter(scopedQuery(req, req.query));
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
   const evaluations = await Evaluation.find(filter).sort({ submittedAt: -1 }).lean();
   const studentIds = evaluations.map((item) => item.studentId);
@@ -292,22 +320,28 @@ router.get('/student/:studentId', protect, async (req, res) => {
   res.json({ data });
 });
 
-router.get('/reports', protect, authorize('admin', 'department_head', 'dean', 'lecturer'), async (req, res) => {
-  const filter = buildFilter(req.query);
+router.get('/reports', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+  const filter = buildFilter(scopedQuery(req, req.query));
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
   const evaluations = await Evaluation.find(filter).lean();
   const studentCount = await Student.countDocuments({
     ...(filter.faculty ? { faculty: filter.faculty } : {}),
+    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
     ...(filter.department ? { department: filter.department } : {}),
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
     ...(filter.className ? { className: filter.className } : {}),
+    ...(filter.classId ? { classId: filter.classId } : {}),
     ...(filter.semester ? { semester: filter.semester } : {}),
     ...(filter.academicYear ? { academicYear: filter.academicYear } : {})
   });
   const assignmentCount = await CourseAssignment.countDocuments({
     status: { $ne: 'inactive' },
     ...(filter.faculty ? { faculty: filter.faculty } : {}),
+    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
     ...(filter.department ? { department: filter.department } : {}),
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
     ...(filter.className ? { className: filter.className } : {}),
+    ...(filter.classId ? { classId: filter.classId } : {}),
     ...(filter.semester ? { semester: filter.semester } : {}),
     ...(filter.academicYear ? { academicYear: filter.academicYear } : {}),
     ...(filter.courseCode ? { courseCode: filter.courseCode } : {}),
@@ -328,14 +362,14 @@ router.get('/reports', protect, authorize('admin', 'department_head', 'dean', 'l
   });
 });
 
-router.get('/analytics', protect, authorize('admin', 'department_head', 'dean', 'lecturer'), async (req, res) => {
-  const scopedQuery = { ...req.query };
-  if (req.user.role === 'lecturer') scopedQuery.lecturerId = req.user.loginId;
-  res.json(await getAnalyticsData(scopedQuery));
+router.get('/analytics', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+  const scoped = scopedQuery(req, req.query);
+  if (req.user.role === 'lecturer') scoped.lecturerId = req.user.loginId;
+  res.json(await getAnalyticsData(scoped));
 });
 
-router.get('/export-csv', protect, authorize('admin', 'department_head', 'dean', 'lecturer'), async (req, res) => {
-  const filter = buildFilter(req.query);
+router.get('/export-csv', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+  const filter = buildFilter(scopedQuery(req, req.query));
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
   const rows = await Evaluation.find(filter).lean();
   sendCsv(res, 'evaluations.csv', rows, [

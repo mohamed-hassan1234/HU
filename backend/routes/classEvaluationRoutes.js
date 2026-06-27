@@ -5,6 +5,7 @@ const Lecturer = require('../models/Lecturer');
 const Student = require('../models/Student');
 const { protect, authorize } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
+const { scopedQuery } = require('../utils/accessControl');
 
 const router = express.Router();
 const qualityScore = { excellent: 5, good: 4, average: 3, poor: 2 };
@@ -67,8 +68,11 @@ router.post('/', protect, authorize('lecturer'), async (req, res) => {
     courseCode: assignment.courseCode,
     courseName: assignment.courseName,
     className: assignment.className,
+    classId: assignment.classId,
     faculty: referenceStudent.faculty,
+    facultyId: referenceStudent.facultyId || assignment.facultyId,
     department: referenceStudent.department,
+    departmentId: referenceStudent.departmentId || assignment.departmentId,
     semester: assignment.semester,
     academicYear: assignment.academicYear,
     classPerformance: req.body.classPerformance,
@@ -101,11 +105,13 @@ router.post('/', protect, authorize('lecturer'), async (req, res) => {
   res.status(201).json(evaluation);
 });
 
-router.get('/admin', protect, authorize('admin', 'department_head', 'dean'), async (req, res) => {
-  const filter = {};
+router.get('/admin', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+  const filter = scopedQuery(req, {});
   ['faculty', 'department', 'className', 'lecturerId', 'semester', 'academicYear'].forEach((key) => {
     if (req.query[key]) filter[key] = req.query[key];
   });
+  if (req.query.facultyId && req.user.role === 'admin') filter.facultyId = req.query.facultyId;
+  if (req.query.departmentId && req.user.role === 'admin') filter.departmentId = req.query.departmentId;
   const data = await ClassEvaluation.find(filter).sort({ submittedAt: -1 }).lean();
   const classMap = new Map();
   data.forEach((item) => {

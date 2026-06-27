@@ -9,7 +9,7 @@ const blankForm = {
   assignmentId: '',
   courseCode: '',
   lecturerId: '',
-  className: '',
+  classId: '',
   semester: '',
   academicYear: '',
   status: 'active'
@@ -20,6 +20,7 @@ export default function AdminAssignmentsPage() {
   const [courses, setCourses] = useState([]);
   const [lecturers, setLecturers] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [masterClasses, setMasterClasses] = useState([]);
   const [filters, setFilters] = useState({ courseCode: '', lecturerId: '', className: '', semester: '', academicYear: '' });
   const [form, setForm] = useState(blankForm);
   const [editing, setEditing] = useState(null);
@@ -45,11 +46,13 @@ export default function AdminAssignmentsPage() {
     Promise.all([
       api.get('/courses', { params: { limit: 500 } }),
       api.get('/lecturers', { params: { limit: 500 } }),
-      api.get('/students/classes')
-    ]).then(([courseRes, lecturerRes, classesRes]) => {
+      api.get('/students/classes'),
+      api.get('/classes')
+    ]).then(([courseRes, lecturerRes, classesRes, masterClassesRes]) => {
       setCourses(courseRes.data.data || []);
       setLecturers(lecturerRes.data.data || []);
       setClasses(classesRes.data || []);
+      setMasterClasses(masterClassesRes.data.data || []);
     }).catch((error) => {
       console.error('Failed to load assignment form options', error);
       toast.fire({ icon: 'error', title: 'Failed to load assignment options' });
@@ -75,7 +78,7 @@ export default function AdminAssignmentsPage() {
       assignmentId: assignment.assignmentId,
       courseCode: assignment.courseCode,
       lecturerId: assignment.lecturerId,
-      className: assignment.className,
+      classId: assignment.classId || '',
       semester: assignment.semester,
       academicYear: assignment.academicYear,
       status: assignment.status
@@ -291,12 +294,20 @@ export default function AdminAssignmentsPage() {
               <Field label="Step 3: Select Class">
                 <select
                   className="input"
-                  value={form.className}
-                  onChange={(e) => setForm({ ...form, className: e.target.value })}
+                  value={form.classId}
+                  onChange={(e) => {
+                    const classItem = masterClasses.find((item) => item._id === e.target.value);
+                    setForm({
+                      ...form,
+                      classId: e.target.value,
+                      semester: classItem?.semester || form.semester,
+                      academicYear: classItem?.academicYear || form.academicYear
+                    });
+                  }}
                   required
                 >
                   <option value="">Select Class</option>
-                  {classes.map((className) => <option key={className} value={className}>{className}</option>)}
+                  {masterClasses.map((classItem) => <option key={classItem._id} value={classItem._id}>{classItem.className} / {classItem.departmentName}</option>)}
                 </select>
               </Field>
               <Field label="Enter Semester">

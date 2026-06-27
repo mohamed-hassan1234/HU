@@ -14,6 +14,7 @@ router.get('/my-courses', async (req, res) => {
   const [courses, evaluations] = await Promise.all([
     CourseAssignment.find({
       className: student.className,
+      ...(student.departmentId ? { departmentId: student.departmentId } : {}),
       status: { $ne: 'inactive' }
     }).sort({ courseCode: 1 }),
     Evaluation.find({ studentId: student.studentId })

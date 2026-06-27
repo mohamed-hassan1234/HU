@@ -1,6 +1,7 @@
 import {
   BarChart3,
   BookOpen,
+  Building2,
   ChevronRight,
   ClipboardList,
   ClipboardPenLine,
@@ -12,6 +13,7 @@ import {
   Home,
   LogOut,
   Menu,
+  ShieldCheck,
   Upload,
   UserRound,
   Users,
@@ -24,10 +26,14 @@ import logo from '../hormuud logo.png';
 
 const adminLinks = [
   { section: 'Overview', label: 'Dashboard', to: '/admin', icon: Home },
+  { section: 'Administration', label: 'User Management', to: '/admin/users', icon: ShieldCheck },
   { section: 'Management', label: 'Students', to: '/admin/students', icon: Users },
   { section: 'Management', label: 'Lecturers', to: '/admin/lecturers', icon: GraduationCap },
   { section: 'Management', label: 'Courses', to: '/admin/courses', icon: BookOpen },
   { section: 'Management', label: 'Course Assignments', to: '/admin/assignments', icon: ClipboardList },
+  { section: 'University', label: 'Faculties', to: '/admin/faculties', icon: Building2 },
+  { section: 'University', label: 'Departments', to: '/admin/departments', icon: Building2 },
+  { section: 'University', label: 'Classes', to: '/admin/classes', icon: GraduationCap },
   { section: 'Evaluation', label: 'Evaluation Questions', to: '/admin/questions', icon: HelpCircle },
   { section: 'Evaluation', label: 'Evaluations', to: '/admin/evaluations', icon: FileText },
   { section: 'Evaluation', label: 'Class Evaluations', to: '/admin/class-evaluations', icon: ClipboardPenLine },
@@ -35,6 +41,18 @@ const adminLinks = [
   { section: 'Insights', label: 'Analytics', to: '/admin/analytics', icon: BarChart3 },
   { section: 'Account', label: 'Profile', to: '/admin/profile', icon: UserRound },
   { section: 'Account', label: 'Import CSV', to: '/admin/import', icon: Upload }
+];
+
+const registrationLinks = [
+  { section: 'Overview', label: 'Dashboard', to: '/registration', icon: Home },
+  { section: 'Department', label: 'Students', to: '/registration/students', icon: Users },
+  { section: 'Department', label: 'Lecturers', to: '/registration/lecturers', icon: GraduationCap },
+  { section: 'Department', label: 'Courses', to: '/registration/courses', icon: BookOpen },
+  { section: 'Department', label: 'Course Assignments', to: '/registration/assignments', icon: ClipboardList },
+  { section: 'Evaluation', label: 'Evaluation Questions', to: '/registration/questions', icon: HelpCircle },
+  { section: 'Insights', label: 'Reports', to: '/registration/reports', icon: FileDown },
+  { section: 'Insights', label: 'Analytics', to: '/registration/analytics', icon: BarChart3 },
+  { section: 'Account', label: 'Profile', to: '/registration/profile', icon: UserRound }
 ];
 
 const studentLinks = [
@@ -55,11 +73,13 @@ const lecturerLinks = [
 const getLinks = (role) => {
   if (role === 'student') return studentLinks;
   if (role === 'lecturer') return lecturerLinks;
+  if (role === 'registration') return registrationLinks;
   return adminLinks;
 };
 
 const roleName = (role) => {
   if (role === 'lecturer') return 'Teacher';
+  if (role === 'registration') return 'Registration Officer';
   if (role === 'department_head') return 'Department Head';
   return role?.replace('_', ' ') || 'User';
 };
@@ -70,7 +90,13 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const links = getLinks(user?.role);
-  const profilePath = user?.role === 'student' ? '/student/profile' : user?.role === 'lecturer' ? '/lecturer/profile' : '/admin/profile';
+  const profilePath = user?.role === 'student'
+    ? '/student/profile'
+    : user?.role === 'lecturer'
+      ? '/lecturer/profile'
+      : user?.role === 'registration'
+        ? '/registration/profile'
+        : '/admin/profile';
   const currentPage = links.find((item) => item.to === location.pathname)?.label || 'Workspace';
   const sections = useMemo(() => [...new Set(links.map((item) => item.section))], [links]);
 
@@ -101,7 +127,7 @@ export default function AppLayout() {
                 <NavLink
                   key={to}
                   to={to}
-                  end={to === '/admin' || to === '/student' || to === '/lecturer'}
+                  end={to === '/admin' || to === '/student' || to === '/lecturer' || to === '/registration'}
                   onClick={() => setOpen(false)}
                   className={({ isActive }) => `group flex items-center gap-3 rounded-md px-3 py-2.5 text-[13px] font-medium transition ${
                     isActive

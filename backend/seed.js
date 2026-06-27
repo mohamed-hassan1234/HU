@@ -10,6 +10,9 @@ const CourseAssignment = require('./models/CourseAssignment');
 const EvaluationQuestion = require('./models/EvaluationQuestion');
 const Evaluation = require('./models/Evaluation');
 const ActivityLog = require('./models/ActivityLog');
+const Faculty = require('./models/Faculty');
+const Department = require('./models/Department');
+const ClassGroup = require('./models/Class');
 
 const faculty = 'Faculty of Information Technology';
 const department = 'Information Technology';
@@ -134,6 +137,9 @@ const run = async () => {
   await connectDB();
   await Promise.all([
     User.deleteMany({}),
+    Faculty.deleteMany({}),
+    Department.deleteMany({}),
+    ClassGroup.deleteMany({}),
     Student.deleteMany({}),
     Lecturer.deleteMany({}),
     Course.deleteMany({}),
@@ -143,17 +149,116 @@ const run = async () => {
     ActivityLog.deleteMany({})
   ]);
 
-  await User.create({ loginId: 'admin', password: 'admin123', role: 'admin', status: 'active' });
+  const computingFaculty = await Faculty.create({
+    name: faculty,
+    code: 'FIT',
+    description: 'Computing and information technology programs',
+    status: 'active'
+  });
+  const itDepartment = await Department.create({
+    name: department,
+    code: 'IT',
+    faculty: computingFaculty._id,
+    facultyName: computingFaculty.name,
+    status: 'active'
+  });
+  const bitClass = await ClassGroup.create({
+    className,
+    faculty: computingFaculty._id,
+    facultyName: computingFaculty.name,
+    department: itDepartment._id,
+    departmentName: itDepartment.name,
+    semester,
+    academicYear,
+    status: 'active'
+  });
+
+  await User.create({ loginId: 'admin', fullName: 'System Administrator', password: 'admin123', role: 'admin', status: 'active' });
+  await User.create({
+    loginId: 'reg-it',
+    fullName: 'IT Registration Officer',
+    email: 'registration.it@hu.edu.so',
+    password: 'Reg12345!',
+    role: 'registration',
+    facultyId: computingFaculty._id,
+    faculty: computingFaculty.name,
+    departmentId: itDepartment._id,
+    department: itDepartment.name,
+    permissions: ['students.manage', 'lecturers.manage', 'assignments.manage', 'questions.manage', 'reports.department'],
+    status: 'active'
+  });
+  await User.create({
+    loginId: 'dean-fit',
+    fullName: 'Dean of Faculty of Information Technology',
+    email: 'dean.fit@hu.edu.so',
+    password: 'Dean12345!',
+    role: 'dean',
+    facultyId: computingFaculty._id,
+    faculty: computingFaculty.name,
+    permissions: ['reports.faculty', 'analytics.faculty', 'rankings.faculty'],
+    status: 'active'
+  });
+  await User.create({
+    loginId: 'head-it',
+    fullName: 'Head of Information Technology Department',
+    email: 'head.it@hu.edu.so',
+    password: 'Head12345!',
+    role: 'department_head',
+    facultyId: computingFaculty._id,
+    faculty: computingFaculty.name,
+    departmentId: itDepartment._id,
+    department: itDepartment.name,
+    permissions: ['reports.department', 'analytics.department', 'rankings.department'],
+    status: 'active'
+  });
   const hashedLecturerPassword = await bcrypt.hash('123456', 10);
-  await Lecturer.insertMany(lecturers.map((lecturer) => ({ ...lecturer, password: hashedLecturerPassword })));
+  await Lecturer.insertMany(lecturers.map((lecturer) => ({
+    ...lecturer,
+    faculty,
+    facultyId: computingFaculty._id,
+    department,
+    departmentId: itDepartment._id,
+    password: hashedLecturerPassword
+  })));
   for (const lecturer of lecturers) {
-    await User.create({ loginId: lecturer.lecturerId, password: '123456', role: 'lecturer', status: 'active' });
+    await User.create({
+      loginId: lecturer.lecturerId,
+      fullName: lecturer.fullName,
+      password: '123456',
+      role: 'lecturer',
+      facultyId: computingFaculty._id,
+      faculty: computingFaculty.name,
+      departmentId: itDepartment._id,
+      department: itDepartment.name,
+      status: 'active'
+    });
   }
 
-  await Course.insertMany(courses);
-  await Student.insertMany(students);
+  await Course.insertMany(courses.map((course) => ({
+    ...course,
+    faculty,
+    facultyId: computingFaculty._id,
+    department,
+    departmentId: itDepartment._id
+  })));
+  await Student.insertMany(students.map((student) => ({
+    ...student,
+    facultyId: computingFaculty._id,
+    departmentId: itDepartment._id,
+    classId: bitClass._id
+  })));
   for (const student of students) {
-    await User.create({ loginId: student.studentId, password: '123456', role: 'student', status: 'active' });
+    await User.create({
+      loginId: student.studentId,
+      fullName: student.fullName,
+      password: '123456',
+      role: 'student',
+      facultyId: computingFaculty._id,
+      faculty: computingFaculty.name,
+      departmentId: itDepartment._id,
+      department: itDepartment.name,
+      status: 'active'
+    });
   }
 
   await CourseAssignment.insertMany(
@@ -163,7 +268,12 @@ const run = async () => {
         assignmentId: `ASN-${String(index + 1).padStart(3, '0')}`,
         courseCode: course.courseCode,
         courseName: course.courseName,
+        faculty,
+        facultyId: computingFaculty._id,
+        department,
+        departmentId: itDepartment._id,
         className,
+        classId: bitClass._id,
         semester,
         academicYear,
         lecturerId: lecturer.lecturerId,
@@ -178,6 +288,9 @@ const run = async () => {
 
   console.log('HUCEMS seed complete');
   console.log('Admin: admin / admin123');
+  console.log('Registration Officer: reg-it / Reg12345!');
+  console.log('Dean: dean-fit / Dean12345!');
+  console.log('Department Head: head-it / Head12345!');
   console.log('Student: ST001 / 123456');
   console.log('Lecturer: 2020 / 123456');
   await mongoose.disconnect();

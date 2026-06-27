@@ -4,6 +4,7 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
+const { scopedQuery } = require('../utils/accessControl');
 
 const router = express.Router();
 const adminOnly = [protect, authorize('admin')];
@@ -22,10 +23,12 @@ const toCourse = (body) => ({
   status: String(body.status || 'active').toLowerCase()
 });
 
-router.get('/', protect, authorize('admin', 'department_head', 'dean'), async (req, res) => {
-  const { search = '', page = 1, limit = 10 } = req.query;
-  const query = {};
+router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+  const { search = '', page = 1, limit = 10, facultyId, departmentId } = req.query;
+  const query = scopedQuery(req, {});
   if (search) query.$or = [{ courseCode: new RegExp(search, 'i') }, { courseName: new RegExp(search, 'i') }];
+  if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     Course.find(query).sort({ courseCode: 1 }).skip(skip).limit(Number(limit)),
