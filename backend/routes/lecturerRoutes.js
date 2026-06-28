@@ -10,7 +10,7 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
-const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessFaculty, userFacultyId } = require('../utils/accessControl');
 
 const router = express.Router();
 const manageLecturers = [protect, authorize('admin', 'registration')];
@@ -34,13 +34,13 @@ const toLecturer = (body) => ({
 
 const hydrateLecturer = async (body, req) => {
   const base = toLecturer(body);
-  if (req?.user?.role === 'registration') base.departmentId = userDepartmentId(req.user);
+  if (req?.user?.role === 'registration') base.facultyId = userFacultyId(req.user);
   const hydrated = await hydrateFacultyDepartment({
     facultyId: base.facultyId,
     departmentId: base.departmentId,
     fallback: base
   });
-  if (req?.user?.role === 'registration') assertCanAccessDepartment(req, hydrated.departmentId);
+  if (req?.user?.role === 'registration') assertCanAccessFaculty(req, hydrated.facultyId);
   return { ...base, ...hydrated };
 };
 
@@ -71,12 +71,12 @@ const upsertLecturerUser = async (lecturer, password) => {
   }
 };
 
-router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
   const { search = '', page = 1, limit = 10, facultyId, departmentId } = req.query;
   const query = scopedQuery(req, {});
   if (search) query.$or = [{ lecturerId: new RegExp(search, 'i') }, { fullName: new RegExp(search, 'i') }];
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
-  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
+  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     Lecturer.find(query).sort({ fullName: 1 }).skip(skip).limit(Number(limit)),
@@ -97,7 +97,7 @@ router.post('/', manageLecturers, async (req, res) => {
 router.put('/:id', manageLecturers, async (req, res) => {
   const current = await Lecturer.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Lecturer not found' });
-  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
   const payload = await hydrateLecturer(req.body, req);
   if (!payload.password) delete payload.password;
   else payload.password = await bcrypt.hash(payload.password, 10);
@@ -114,7 +114,7 @@ router.put('/:id', manageLecturers, async (req, res) => {
 router.delete('/:id', manageLecturers, async (req, res) => {
   const current = await Lecturer.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Lecturer not found' });
-  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
   const lecturer = await Lecturer.findByIdAndDelete(req.params.id);
   if (!lecturer) return res.status(404).json({ message: 'Lecturer not found' });
   await User.deleteOne({ loginId: lecturer.lecturerId });

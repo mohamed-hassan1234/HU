@@ -30,18 +30,22 @@ const avg = (rows, key) => {
   return valid.length ? Number((valid.reduce((sum, item) => sum + Number(item[key]), 0) / valid.length).toFixed(2)) : 0;
 };
 
-const groupAverage = (rows, groupKey, scoreKey) => {
+const groupAverage = (rows, idKey, labelKey, scoreKey) => {
   const map = {};
   rows.forEach((item) => {
-    const key = item[groupKey] || 'Unknown';
-    map[key] ||= { name: key, total: 0, count: 0 };
+    const name = item[labelKey] || 'Unknown';
+    const key = String(item[idKey] || name);
+    map[key] ||= { id: key, name, total: 0, count: 0 };
     map[key].total += Number(item[scoreKey] || 0);
     map[key].count += 1;
   });
   return Object.values(map)
-    .map((item) => ({ name: item.name, average: Number((item.total / item.count).toFixed(2)), submissions: item.count }))
-    .sort((a, b) => b.average - a.average);
+    .map((item) => ({ id: item.id, name: item.name, average: Number((item.total / item.count).toFixed(2)), submissions: item.count }))
+    .sort((a, b) => b.average - a.average || b.submissions - a.submissions || a.name.localeCompare(b.name))
+    .map((item, index) => ({ ...item, rank: index + 1 }));
 };
+
+const reverseRank = (rows) => [...rows].filter((item) => item.submissions > 0).reverse();
 
 const getAnalyticsData = async (query = {}) => {
   const filter = buildFilter(query);
@@ -79,12 +83,12 @@ const getAnalyticsData = async (query = {}) => {
   const totalLecturers = lecturers.length;
   const totalCourses = courses.length;
 
-  const lecturerRanking = groupAverage(evaluations, 'lecturerName', 'lecturerOverallRating');
-  const courseSatisfaction = groupAverage(evaluations, 'courseName', 'courseOverallRating');
-  const departmentComparison = groupAverage(evaluations, 'department', 'courseOverallRating');
-  const facultyComparison = groupAverage(evaluations, 'faculty', 'courseOverallRating');
-  const classComparison = groupAverage(evaluations, 'className', 'courseOverallRating');
-  const semesterTrends = groupAverage(evaluations, 'semester', 'courseOverallRating');
+  const lecturerRanking = groupAverage(evaluations, 'lecturerId', 'lecturerName', 'lecturerOverallRating');
+  const courseSatisfaction = groupAverage(evaluations, 'courseCode', 'courseName', 'courseOverallRating');
+  const departmentComparison = groupAverage(evaluations, 'departmentId', 'department', 'courseOverallRating');
+  const facultyComparison = groupAverage(evaluations, 'facultyId', 'faculty', 'courseOverallRating');
+  const classComparison = groupAverage(evaluations, 'classId', 'className', 'courseOverallRating');
+  const semesterTrends = groupAverage(evaluations, 'semester', 'semester', 'courseOverallRating');
   const activeSemesters = [...new Set(assignments.map((item) => item.semester).filter(Boolean))];
   const studentFacultyByClass = new Map();
   students.forEach((item) => {
@@ -147,7 +151,11 @@ const getAnalyticsData = async (query = {}) => {
     .map((item, index) => ({ ...item, rank: index + 1 }));
 
   const assignmentParticipation = assignments.map((assignment) => {
-    const eligible = students.filter((student) => student.className === assignment.className).length;
+    const eligible = students.filter((student) => (
+      assignment.classId
+        ? String(student.classId) === String(assignment.classId)
+        : student.className === assignment.className && (!assignment.departmentId || String(student.departmentId) === String(assignment.departmentId))
+    )).length;
     const submitted = new Set(
       evaluations.filter((item) => item.assignmentId === assignment.assignmentId).map((item) => item.studentId)
     ).size;
@@ -189,11 +197,12 @@ const getAnalyticsData = async (query = {}) => {
     classComparison,
     departmentRankings: departmentComparison,
     facultyRankings: facultyComparison,
+    classRankings: classComparison,
     universityRankings: teacherLeaderboard,
     bestDepartment: departmentComparison[0] || null,
-    worstDepartment: [...departmentComparison].reverse().find((item) => item.submissions > 0) || null,
+    worstDepartment: reverseRank(departmentComparison)[0] || null,
     bestFaculty: facultyComparison[0] || null,
-    worstFaculty: [...facultyComparison].reverse().find((item) => item.submissions > 0) || null,
+    worstFaculty: reverseRank(facultyComparison)[0] || null,
     highestParticipation: [...assignmentParticipation].sort((a, b) => b.participationRate - a.participationRate)[0] || null,
     lowestParticipation: [...assignmentParticipation].sort((a, b) => a.participationRate - b.participationRate)[0] || null,
     highestRatedLecturer: teacherLeaderboard.find((item) => item.totalEvaluations > 0) || null,
@@ -201,7 +210,7 @@ const getAnalyticsData = async (query = {}) => {
     highestRatedCourse: courseLeaderboard.find((item) => item.totalEvaluations > 0) || null,
     lowestRatedCourse: [...courseLeaderboard].reverse().find((item) => item.totalEvaluations > 0) || null,
     highestRatedClass: classComparison[0] || null,
-    lowestRatedClass: [...classComparison].reverse().find((item) => item.submissions > 0) || null,
+    lowestRatedClass: reverseRank(classComparison)[0] || null,
     semesterTrends,
     participationChart: [
       { name: 'Submitted', value: submittedAssignments },
@@ -295,7 +304,175 @@ const createEvaluation = async (req, res) => {
   res.status(201).json(evaluation);
 };
 
-router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+const buildParticipationData = async (req) => {
+  const query = scopedQuery(req, req.query);
+  if (req.user.role === 'lecturer') query.lecturerId = req.user.loginId;
+  const filter = buildFilter(query);
+  const assignmentFilter = {
+    status: { $ne: 'inactive' },
+    ...(filter.assignmentId ? { assignmentId: filter.assignmentId } : {}),
+    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+    ...(filter.className ? { className: filter.className } : {}),
+    ...(filter.classId ? { classId: filter.classId } : {}),
+    ...(filter.semester ? { semester: filter.semester } : {}),
+    ...(filter.academicYear ? { academicYear: filter.academicYear } : {}),
+    ...(filter.courseCode ? { courseCode: filter.courseCode } : {}),
+    ...(filter.lecturerId ? { lecturerId: filter.lecturerId } : {})
+  };
+  const assignments = await CourseAssignment.find(assignmentFilter).sort({ className: 1, courseCode: 1 }).lean();
+  const assignmentIds = assignments.map((item) => item.assignmentId);
+  const studentFilter = {
+    status: 'active',
+    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
+    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
+    ...(filter.className ? { className: filter.className } : {}),
+    ...(filter.classId ? { classId: filter.classId } : {})
+  };
+  const [students, evaluations] = await Promise.all([
+    Student.find(studentFilter).sort({ className: 1, fullName: 1 }).lean(),
+    Evaluation.find({ ...filter, assignmentId: { $in: assignmentIds } }).lean()
+  ]);
+  const studentsByClass = new Map();
+  students.forEach((student) => {
+    const key = String(student.classId || `${student.departmentId || student.department}|${student.className}`);
+    if (!studentsByClass.has(key)) studentsByClass.set(key, []);
+    studentsByClass.get(key).push(student);
+  });
+  const evaluationMap = new Map(evaluations.map((item) => [`${item.assignmentId}|${item.studentId}`, item]));
+  const rows = [];
+  assignments.forEach((assignment) => {
+    const classKey = String(assignment.classId || `${assignment.departmentId || assignment.department}|${assignment.className}`);
+    (studentsByClass.get(classKey) || []).forEach((student) => {
+      const evaluation = evaluationMap.get(`${assignment.assignmentId}|${student.studentId}`);
+      rows.push({
+        assignmentId: assignment.assignmentId,
+        courseCode: assignment.courseCode,
+        courseName: assignment.courseName,
+        lecturerId: assignment.lecturerId,
+        lecturerName: assignment.lecturerName,
+        faculty: student.faculty,
+        facultyId: student.facultyId,
+        department: student.department,
+        departmentId: student.departmentId,
+        className: student.className,
+        classId: student.classId,
+        studentId: student.studentId,
+        studentName: student.fullName,
+        status: evaluation ? 'evaluated' : 'not_evaluated',
+        submittedAt: evaluation?.submittedAt || null,
+        evaluationId: evaluation?._id || null,
+        courseScore: evaluation?.courseOverallRating || null,
+        lecturerScore: evaluation?.lecturerOverallRating || null,
+        attendanceRate: evaluation?.attendanceRate || null,
+        recommendation: evaluation?.recommendation || null
+      });
+    });
+  });
+  const status = req.query.status;
+  const evaluated = rows.filter((item) => item.status === 'evaluated').length;
+  return {
+    rows: status ? rows.filter((item) => item.status === status) : rows,
+    allRows: rows,
+    totals: {
+      assignments: assignments.length,
+      students: students.length,
+      possible: rows.length,
+      evaluated,
+      notEvaluated: Math.max(rows.length - evaluated, 0),
+      participationRate: rows.length ? Number(((evaluated / rows.length) * 100).toFixed(1)) : 0
+    }
+  };
+};
+
+const attendanceValue = (value) => {
+  if (value === '75-100%') return 90;
+  if (value === '50-74%') return 62;
+  if (value === 'Less than 50%') return 40;
+  return 0;
+};
+
+const countBy = (rows, key) => Object.values(rows.reduce((map, item) => {
+  const name = item[key] || 'Unknown';
+  map[name] ||= { name, value: 0 };
+  map[name].value += 1;
+  return map;
+}, {}));
+
+const buildReportModel = async (req) => {
+  const analyticsQuery = scopedQuery(req, req.query);
+  if (req.user.role === 'lecturer') analyticsQuery.lecturerId = req.user.loginId;
+  const filter = buildFilter(analyticsQuery);
+  const [analytics, participation, evaluations] = await Promise.all([
+    getAnalyticsData(analyticsQuery),
+    buildParticipationData(req),
+    Evaluation.find(filter).lean()
+  ]);
+  const evaluatedRows = participation.allRows.filter((row) => row.status === 'evaluated');
+  const recommendationRows = evaluatedRows.filter((row) => row.recommendation);
+  const yesRecommendations = recommendationRows.filter((row) => row.recommendation === 'Yes').length;
+  const attendanceRows = evaluatedRows.filter((row) => row.attendanceRate);
+  const attendanceRate = attendanceRows.length
+    ? Number((attendanceRows.reduce((sum, row) => sum + attendanceValue(row.attendanceRate), 0) / attendanceRows.length).toFixed(1))
+    : 0;
+  const recommendationRate = recommendationRows.length ? Number(((yesRecommendations / recommendationRows.length) * 100).toFixed(1)) : 0;
+  const report = {
+    filters: filter,
+    totalSubmissions: evaluations.length,
+    participationRate: analytics.totals.participationRate,
+    averageLecturerScore: avg(evaluations, 'lecturerOverallRating'),
+    averageCourseScore: avg(evaluations, 'courseOverallRating'),
+    courseSatisfaction: analytics.courseSatisfaction,
+    lecturerRanking: analytics.lecturerRanking,
+    departmentComparison: analytics.departmentRankings,
+    facultyComparison: analytics.facultyRankings,
+    classComparison: analytics.classRankings,
+    bestDepartment: analytics.bestDepartment,
+    worstDepartment: analytics.worstDepartment,
+    bestFaculty: analytics.bestFaculty,
+    worstFaculty: analytics.worstFaculty,
+    bestClass: analytics.highestRatedClass,
+    worstClass: analytics.lowestRatedClass,
+    bestLecturer: analytics.highestRatedLecturer,
+    worstLecturer: analytics.lowestRatedLecturer,
+    bestCourse: analytics.highestRatedCourse,
+    worstCourse: analytics.lowestRatedCourse
+  };
+  return {
+    meta: {
+      generatedAt: new Date(),
+      generatedBy: req.user.fullName || req.user.loginId,
+      role: req.user.role,
+      confidentiality: 'Confidential',
+      filters: req.query
+    },
+    report,
+    participation: {
+      rows: participation.rows,
+      totals: participation.totals
+    },
+    derived: {
+      bestLecturer: report.bestLecturer ? { name: report.bestLecturer.teacher, average: report.bestLecturer.averageScore, rank: report.bestLecturer.rank } : null,
+      worstLecturer: report.worstLecturer ? { name: report.worstLecturer.teacher, average: report.worstLecturer.averageScore, rank: report.worstLecturer.rank } : null,
+      bestCourse: report.bestCourse ? { name: report.bestCourse.course, average: report.bestCourse.averageScore, rank: report.bestCourse.rank } : null,
+      worstCourse: report.worstCourse ? { name: report.worstCourse.course, average: report.worstCourse.averageScore, rank: report.worstCourse.rank } : null,
+      attendanceRate,
+      recommendationRate,
+      recommendationBreakdown: countBy(evaluatedRows, 'recommendation'),
+      attendanceBreakdown: countBy(evaluatedRows, 'attendanceRate'),
+      evaluationTrend: countBy(evaluatedRows.map((row) => ({ submittedDate: row.submittedAt ? new Date(row.submittedAt).toLocaleDateString() : 'No date' })), 'submittedDate'),
+      radar: [
+        { metric: 'Participation', value: participation.totals.participationRate || 0 },
+        { metric: 'Attendance', value: attendanceRate },
+        { metric: 'Recommend', value: recommendationRate },
+        { metric: 'Course Score', value: (report.averageCourseScore || 0) * 20 },
+        { metric: 'Teacher Score', value: (report.averageLecturerScore || 0) * 20 }
+      ]
+    }
+  };
+};
+
+router.get('/', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
   const filter = buildFilter(scopedQuery(req, req.query));
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
   const evaluations = await Evaluation.find(filter).sort({ submittedAt: -1 }).lean();
@@ -312,63 +489,46 @@ router.get('/', protect, authorize('admin', 'registration', 'department_head', '
 
 router.post('/', protect, authorize('admin', 'student'), createEvaluation);
 
-router.get('/student/:studentId', protect, async (req, res) => {
+router.get('/student/:studentId', protect, authorize('admin', 'registration', 'dean', 'student'), async (req, res) => {
   if (req.user.role === 'student' && req.user.loginId !== req.params.studentId) {
     return res.status(403).json({ message: 'Forbidden' });
   }
-  const data = await Evaluation.find({ studentId: req.params.studentId }).sort({ submittedAt: -1 });
-  res.json({ data });
-});
-
-router.get('/reports', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+  const student = await Student.findOne({ studentId: req.params.studentId }).lean();
+  if (!student) return res.status(404).json({ message: 'Student not found' });
+  if (req.user.role !== 'student') {
+    const scoped = scopedQuery(req, {});
+    if (scoped.facultyId && String(student.facultyId) !== String(scoped.facultyId)) return res.status(403).json({ message: 'Forbidden' });
+    if (scoped.departmentId && String(student.departmentId) !== String(scoped.departmentId)) return res.status(403).json({ message: 'Forbidden' });
+  }
   const filter = buildFilter(scopedQuery(req, req.query));
-  if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
-  const evaluations = await Evaluation.find(filter).lean();
-  const studentCount = await Student.countDocuments({
-    ...(filter.faculty ? { faculty: filter.faculty } : {}),
-    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
-    ...(filter.department ? { department: filter.department } : {}),
-    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
-    ...(filter.className ? { className: filter.className } : {}),
-    ...(filter.classId ? { classId: filter.classId } : {}),
-    ...(filter.semester ? { semester: filter.semester } : {}),
-    ...(filter.academicYear ? { academicYear: filter.academicYear } : {})
-  });
-  const assignmentCount = await CourseAssignment.countDocuments({
-    status: { $ne: 'inactive' },
-    ...(filter.faculty ? { faculty: filter.faculty } : {}),
-    ...(filter.facultyId ? { facultyId: filter.facultyId } : {}),
-    ...(filter.department ? { department: filter.department } : {}),
-    ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
-    ...(filter.className ? { className: filter.className } : {}),
-    ...(filter.classId ? { classId: filter.classId } : {}),
-    ...(filter.semester ? { semester: filter.semester } : {}),
-    ...(filter.academicYear ? { academicYear: filter.academicYear } : {}),
-    ...(filter.courseCode ? { courseCode: filter.courseCode } : {}),
-    ...(filter.lecturerId ? { lecturerId: filter.lecturerId } : {}),
-    ...(filter.assignmentId ? { assignmentId: filter.assignmentId } : {})
-  });
-  const possibleSubmissions = studentCount * assignmentCount;
+  const data = await Evaluation.find({ ...filter, studentId: req.params.studentId }).sort({ submittedAt: -1 }).lean();
+  res.json({ student, data });
+});
+
+router.get('/participation', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
+  const participation = await buildParticipationData(req);
   res.json({
-    filters: filter,
-    totalSubmissions: evaluations.length,
-    participationRate: possibleSubmissions ? Number(((evaluations.length / possibleSubmissions) * 100).toFixed(1)) : 0,
-    averageLecturerScore: avg(evaluations, 'lecturerOverallRating'),
-    averageCourseScore: avg(evaluations, 'courseOverallRating'),
-    courseSatisfaction: groupAverage(evaluations, 'courseName', 'courseOverallRating'),
-    lecturerRanking: groupAverage(evaluations, 'lecturerName', 'lecturerOverallRating'),
-    departmentComparison: groupAverage(evaluations, 'department', 'courseOverallRating'),
-    facultyComparison: groupAverage(evaluations, 'faculty', 'courseOverallRating')
+    rows: participation.rows,
+    totals: participation.totals
   });
 });
 
-router.get('/analytics', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+router.get('/reports', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
+  const model = await buildReportModel(req);
+  res.json(model.report);
+});
+
+router.get('/report-model', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
+  res.json(await buildReportModel(req));
+});
+
+router.get('/analytics', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
   const scoped = scopedQuery(req, req.query);
   if (req.user.role === 'lecturer') scoped.lecturerId = req.user.loginId;
   res.json(await getAnalyticsData(scoped));
 });
 
-router.get('/export-csv', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+router.get('/export-csv', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
   const filter = buildFilter(scopedQuery(req, req.query));
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
   const rows = await Evaluation.find(filter).lean();
@@ -393,4 +553,4 @@ router.get('/export-csv', protect, authorize('admin', 'registration', 'departmen
   ]);
 });
 
-module.exports = { router, createEvaluation, getAnalyticsData };
+module.exports = { router, createEvaluation, getAnalyticsData, buildReportModel };

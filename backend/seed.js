@@ -182,33 +182,18 @@ const run = async () => {
     role: 'registration',
     facultyId: computingFaculty._id,
     faculty: computingFaculty.name,
-    departmentId: itDepartment._id,
-    department: itDepartment.name,
-    permissions: ['students.manage', 'lecturers.manage', 'assignments.manage', 'questions.manage', 'reports.department'],
+    permissions: ['students.manage', 'lecturers.manage', 'assignments.manage', 'questions.manage', 'reports.faculty'],
     status: 'active'
   });
   await User.create({
     loginId: 'dean-fit',
-    fullName: 'Dean of Faculty of Information Technology',
+    fullName: 'Dean of Information Technology',
     email: 'dean.fit@hu.edu.so',
     password: 'Dean12345!',
     role: 'dean',
     facultyId: computingFaculty._id,
     faculty: computingFaculty.name,
-    permissions: ['reports.faculty', 'analytics.faculty', 'rankings.faculty'],
-    status: 'active'
-  });
-  await User.create({
-    loginId: 'head-it',
-    fullName: 'Head of Information Technology Department',
-    email: 'head.it@hu.edu.so',
-    password: 'Head12345!',
-    role: 'department_head',
-    facultyId: computingFaculty._id,
-    faculty: computingFaculty.name,
-    departmentId: itDepartment._id,
-    department: itDepartment.name,
-    permissions: ['reports.department', 'analytics.department', 'rankings.department'],
+    permissions: ['reports.faculty', 'analytics.faculty', 'rankings.faculty', 'class_reports.faculty'],
     status: 'active'
   });
   const hashedLecturerPassword = await bcrypt.hash('123456', 10);
@@ -290,7 +275,6 @@ const run = async () => {
   console.log('Admin: admin / admin123');
   console.log('Registration Officer: reg-it / Reg12345!');
   console.log('Dean: dean-fit / Dean12345!');
-  console.log('Department Head: head-it / Head12345!');
   console.log('Student: ST001 / 123456');
   console.log('Lecturer: 2020 / 123456');
   await mongoose.disconnect();

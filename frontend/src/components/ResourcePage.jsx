@@ -129,8 +129,8 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
       <div className="panel overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/40 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={17} />
-            <input className="input pl-9" placeholder="Search records" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load()} />
+            <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+            <input className="input !pl-12" placeholder="Search records" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load()} />
           </div>
           <button className="btn-secondary" onClick={load}>Apply</button>
         </div>

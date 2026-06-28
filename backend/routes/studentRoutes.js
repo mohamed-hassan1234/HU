@@ -8,7 +8,7 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
-const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessFaculty, userFacultyId } = require('../utils/accessControl');
 
 const router = express.Router();
 const manageStudents = [protect, authorize('admin', 'registration')];
@@ -36,7 +36,7 @@ const toStudent = async (body, req) => {
     status: body.status || 'active'
   };
   if (req?.user?.role === 'registration') {
-    base.departmentId = userDepartmentId(req.user);
+    base.facultyId = userFacultyId(req.user);
   }
   const hydrated = await hydrateFacultyDepartment({
     facultyId: base.facultyId,
@@ -44,7 +44,7 @@ const toStudent = async (body, req) => {
     classId: base.classId,
     fallback: base
   });
-  if (req?.user?.role === 'registration') assertCanAccessDepartment(req, hydrated.departmentId);
+  if (req?.user?.role === 'registration') assertCanAccessFaculty(req, hydrated.facultyId);
   return { ...base, ...hydrated };
 };
 
@@ -77,8 +77,8 @@ const upsertStudentUser = async (student, password) => {
 
 const getUniqueClasses = async (req, res) => {
   try {
-    if (req.user.role === 'registration' && userDepartmentId(req.user)) {
-      const classes = await ClassGroup.find({ department: userDepartmentId(req.user), status: { $ne: 'inactive' } })
+    if (req.user.role === 'registration' && userFacultyId(req.user)) {
+      const classes = await ClassGroup.find({ faculty: userFacultyId(req.user), status: { $ne: 'inactive' } })
         .sort({ className: 1 })
         .lean();
       return res.status(200).json(classes.map((item) => item.className));
@@ -110,7 +110,7 @@ router.get('/', manageStudents, async (req, res) => {
   if (faculty) query.faculty = faculty;
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
   if (department) query.department = department;
-  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
+  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
   if (className) query.className = className;
   if (classId) query.classId = classId;
   const skip = (Number(page) - 1) * Number(limit);
@@ -132,7 +132,7 @@ router.post('/', manageStudents, async (req, res) => {
 router.put('/:id', manageStudents, async (req, res) => {
   const current = await Student.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Student not found' });
-  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
   const payload = await toStudent(req.body, req);
   const student = await Student.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true });
   if (!student) return res.status(404).json({ message: 'Student not found' });
@@ -144,7 +144,7 @@ router.put('/:id', manageStudents, async (req, res) => {
 router.delete('/:id', manageStudents, async (req, res) => {
   const current = await Student.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Student not found' });
-  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
   const student = await Student.findByIdAndDelete(req.params.id);
   if (!student) return res.status(404).json({ message: 'Student not found' });
   await User.deleteOne({ loginId: student.studentId });

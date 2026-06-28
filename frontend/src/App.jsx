@@ -55,9 +55,19 @@ export default function App() {
           <Routes>
           <Route path="/login" element={<LoginPage />} />
 
-          <Route element={<ProtectedRoute roles={['admin', 'department_head', 'dean']} />}>
+          <Route element={<ProtectedRoute roles={['admin', 'dean']} />}>
             <Route element={<AppLayout />}>
               <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/evaluations" element={<EvaluationsPage />} />
+              <Route path="/admin/class-evaluations" element={<AdminClassEvaluationsPage />} />
+              <Route path="/admin/reports" element={<ReportsPage />} />
+              <Route path="/admin/analytics" element={<AnalyticsPage />} />
+              <Route path="/admin/profile" element={<ProfilePage />} />
+            </Route>
+          </Route>
+
+          <Route element={<ProtectedRoute roles={['admin']} />}>
+            <Route element={<AppLayout />}>
               <Route path="/admin/users" element={<UserManagementPage />} />
               <Route path="/admin/students" element={<StudentsPage />} />
               <Route path="/admin/lecturers" element={<LecturersPage />} />
@@ -67,11 +77,6 @@ export default function App() {
               <Route path="/admin/departments" element={<DepartmentManagementPage />} />
               <Route path="/admin/classes" element={<ClassManagementPage />} />
               <Route path="/admin/questions" element={<QuestionsPage />} />
-              <Route path="/admin/evaluations" element={<EvaluationsPage />} />
-              <Route path="/admin/class-evaluations" element={<AdminClassEvaluationsPage />} />
-              <Route path="/admin/reports" element={<ReportsPage />} />
-              <Route path="/admin/analytics" element={<AnalyticsPage />} />
-              <Route path="/admin/profile" element={<ProfilePage />} />
               <Route path="/admin/import" element={<ImportPage />} />
             </Route>
           </Route>

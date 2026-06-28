@@ -8,8 +8,7 @@ export const roleHome = {
   registration: '/registration',
   student: '/student',
   lecturer: '/lecturer',
-  department_head: '/admin/reports',
-  dean: '/admin/analytics'
+  dean: '/admin'
 };
 
 export function AuthProvider({ children }) {

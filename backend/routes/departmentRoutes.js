@@ -3,7 +3,7 @@ const Department = require('../models/Department');
 const Faculty = require('../models/Faculty');
 const { protect, authorize } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
-const { userDepartmentId, userFacultyId } = require('../utils/accessControl');
+const { userFacultyId } = require('../utils/accessControl');
 
 const router = express.Router();
 
@@ -20,15 +20,13 @@ const toDepartment = async (body) => {
   };
 };
 
-router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
   const query = {};
   if (req.query.facultyId) query.faculty = req.query.facultyId;
   if (req.query.status) query.status = req.query.status;
   if (req.query.search) query.name = new RegExp(req.query.search, 'i');
   if (req.user.role === 'dean' && userFacultyId(req.user)) query.faculty = userFacultyId(req.user);
-  if (['registration', 'department_head'].includes(req.user.role) && userDepartmentId(req.user)) {
-    query._id = userDepartmentId(req.user);
-  }
+  if (req.user.role === 'registration' && userFacultyId(req.user)) query.faculty = userFacultyId(req.user);
   res.json({ data: await Department.find(query).sort({ facultyName: 1, name: 1 }).lean() });
 });
 

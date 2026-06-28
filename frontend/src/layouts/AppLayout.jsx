@@ -55,6 +55,15 @@ const registrationLinks = [
   { section: 'Account', label: 'Profile', to: '/registration/profile', icon: UserRound }
 ];
 
+const deanLinks = [
+  { section: 'Overview', label: 'Dashboard', to: '/admin', icon: Home },
+  { section: 'Evaluation', label: 'Evaluations', to: '/admin/evaluations', icon: FileText },
+  { section: 'Evaluation', label: 'Class Evaluations', to: '/admin/class-evaluations', icon: ClipboardPenLine },
+  { section: 'Insights', label: 'Reports', to: '/admin/reports', icon: FileDown },
+  { section: 'Insights', label: 'Analytics', to: '/admin/analytics', icon: BarChart3 },
+  { section: 'Account', label: 'Profile', to: '/admin/profile', icon: UserRound }
+];
+
 const studentLinks = [
   { section: 'Overview', label: 'Dashboard', to: '/student', icon: Home },
   { section: 'Learning', label: 'My Courses', to: '/student/courses', icon: BookOpen },
@@ -74,13 +83,14 @@ const getLinks = (role) => {
   if (role === 'student') return studentLinks;
   if (role === 'lecturer') return lecturerLinks;
   if (role === 'registration') return registrationLinks;
+  if (role === 'dean') return deanLinks;
   return adminLinks;
 };
 
 const roleName = (role) => {
   if (role === 'lecturer') return 'Teacher';
   if (role === 'registration') return 'Registration Officer';
-  if (role === 'department_head') return 'Department Head';
+  if (role === 'dean') return 'Dean';
   return role?.replace('_', ' ') || 'User';
 };
 

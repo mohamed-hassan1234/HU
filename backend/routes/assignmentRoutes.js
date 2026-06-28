@@ -9,7 +9,7 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
-const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessFaculty, userFacultyId } = require('../utils/accessControl');
 
 const router = express.Router();
 const manageAssignments = [protect, authorize('admin', 'registration')];
@@ -43,7 +43,7 @@ const toAssignment = (body) => ({
   status: String(body.status || 'active').toLowerCase()
 });
 
-router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean', 'lecturer'), async (req, res) => {
+router.get('/', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
   const { search = '', page = 1, limit = 10, courseCode, lecturerId, className, classId, semester, academicYear, departmentId } = req.query;
   const query = scopedQuery(req, {});
   if (req.user.role === 'lecturer') query.lecturerId = req.user.loginId;
@@ -52,7 +52,7 @@ router.get('/', protect, authorize('admin', 'registration', 'department_head', '
   if (lecturerId && req.user.role !== 'lecturer') query.lecturerId = lecturerId;
   if (className) query.className = className;
   if (classId) query.classId = classId;
-  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
+  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
   if (semester) query.semester = semester;
   if (academicYear) query.academicYear = academicYear;
   const skip = (Number(page) - 1) * Number(limit);
@@ -63,12 +63,12 @@ router.get('/', protect, authorize('admin', 'registration', 'department_head', '
   res.json({ data, total, page: Number(page), pages: Math.ceil(total / Number(limit)) || 1 });
 });
 
-router.get('/:id/participation', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+router.get('/:id/participation', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
   const assignment = mongoose.isValidObjectId(req.params.id)
     ? await CourseAssignment.findById(req.params.id).lean()
     : await CourseAssignment.findOne({ assignmentId: req.params.id }).lean();
   if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
-  if (req.user.role === 'registration') assertCanAccessDepartment(req, assignment.departmentId);
+  if (req.user.role === 'registration') assertCanAccessFaculty(req, assignment.facultyId);
 
   const [students, evaluations] = await Promise.all([
     Student.find({
@@ -163,9 +163,9 @@ const ensureStudentsExistForAssignment = async (payload) => {
 router.post('/', manageAssignments, async (req, res) => {
   try {
     const base = toAssignment(req.body);
-    if (req.user.role === 'registration') base.departmentId = userDepartmentId(req.user);
+    if (req.user.role === 'registration') base.facultyId = userFacultyId(req.user);
     const payload = await hydrateAssignment(base);
-    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
+    if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload);
     const assignment = await CourseAssignment.create(payload);
@@ -180,11 +180,11 @@ router.put('/:id', manageAssignments, async (req, res) => {
   try {
     const current = await CourseAssignment.findById(req.params.id).lean();
     if (!current) return res.status(404).json({ message: 'Assignment not found' });
-    if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+    if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
     const base = toAssignment(req.body);
-    if (req.user.role === 'registration') base.departmentId = userDepartmentId(req.user);
+    if (req.user.role === 'registration') base.facultyId = userFacultyId(req.user);
     const payload = await hydrateAssignment(base);
-    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
+    if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload, req.params.id);
     const assignment = await CourseAssignment.findByIdAndUpdate(req.params.id, payload, {
@@ -202,7 +202,7 @@ router.put('/:id', manageAssignments, async (req, res) => {
 router.delete('/:id', manageAssignments, async (req, res) => {
   const current = await CourseAssignment.findById(req.params.id).lean();
   if (!current) return res.status(404).json({ message: 'Assignment not found' });
-  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
   const assignment = await CourseAssignment.findByIdAndDelete(req.params.id);
   if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
   await logActivity(req, 'delete', 'assignment', assignment.assignmentId);
@@ -215,9 +215,9 @@ router.post('/import-csv', manageAssignments, upload.single('file'), async (req,
   let skipped = 0;
   for (const row of rows) {
     let payload = toAssignment(row);
-    if (req.user.role === 'registration') payload.departmentId = userDepartmentId(req.user);
+    if (req.user.role === 'registration') payload.facultyId = userFacultyId(req.user);
     payload = await hydrateAssignment(payload);
-    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
+    if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
     if (!payload.assignmentId || !payload.courseCode) continue;
     const duplicate = await CourseAssignment.findOne({
       courseCode: payload.courseCode,

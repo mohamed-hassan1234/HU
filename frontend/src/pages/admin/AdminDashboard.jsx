@@ -24,6 +24,9 @@ const colors = ['#008751', '#1E73BE', '#C9932A', '#006B3C'];
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [filters, setFilters] = useState({});
+  const [faculties, setFaculties] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [classes, setClasses] = useState([]);
 
   const load = () => {
     api.get('/dashboard/admin', { params: filters })
@@ -32,10 +35,21 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
+    Promise.all([api.get('/faculties'), api.get('/departments'), api.get('/classes')]).then(([facultyRes, departmentRes, classRes]) => {
+      setFaculties(facultyRes.data.data || []);
+      setDepartments(departmentRes.data.data || []);
+      setClasses(classRes.data.data || []);
+    });
     load();
   }, []);
 
   const totals = data?.totals || {};
+  const filteredDepartments = departments.filter((item) => !filters.facultyId || String(item.faculty) === String(filters.facultyId));
+  const filteredClasses = classes.filter((item) => {
+    if (filters.departmentId) return String(item.department) === String(filters.departmentId);
+    if (filters.facultyId) return String(item.faculty) === String(filters.facultyId);
+    return true;
+  });
   return (
     <>
       <PageHeader
@@ -46,7 +60,19 @@ export default function AdminDashboard() {
 
       <div className="panel mb-5 p-4">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
-          {['semester', 'faculty', 'department', 'className', 'lecturerId', 'courseCode', 'academicYear'].map((key) => (
+          <select className="input" value={filters.facultyId || ''} onChange={(e) => setFilters({ ...filters, facultyId: e.target.value, departmentId: '', classId: '' })}>
+            <option value="">All Faculties</option>
+            {faculties.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+          </select>
+          <select className="input" value={filters.departmentId || ''} onChange={(e) => setFilters({ ...filters, departmentId: e.target.value, classId: '' })}>
+            <option value="">All Departments</option>
+            {filteredDepartments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+          </select>
+          <select className="input" value={filters.classId || ''} onChange={(e) => setFilters({ ...filters, classId: e.target.value })}>
+            <option value="">All Classes</option>
+            {filteredClasses.map((item) => <option key={item._id} value={item._id}>{item.className}</option>)}
+          </select>
+          {['semester', 'lecturerId', 'courseCode', 'academicYear'].map((key) => (
             <input key={key} className="input" placeholder={key} value={filters[key] || ''} onChange={(e) => setFilters({ ...filters, [key]: e.target.value })} />
           ))}
         </div>
@@ -65,6 +91,8 @@ export default function AdminDashboard() {
         <StatCard title="Average Score" value={`${totals.averageSatisfactionScore || 0}/5`} icon={Star} />
         <StatCard title="Active Semesters" value={totals.activeSemesters || 0} icon={Medal} accent="gold" />
       </div>
+
+      <EvaluationRankHighlights data={data} />
 
       <div className="mt-6 grid gap-4 xl:grid-cols-3">
         <ChartPanel title="Teacher Leaderboard" className="xl:col-span-2">
@@ -123,6 +151,7 @@ export default function AdminDashboard() {
       </div>
 
       <AssignmentParticipation rows={data?.assignmentParticipation || []} />
+      <ClassReportHighlights reports={data?.classReports} />
 
       <div className="mt-6 grid gap-4 xl:grid-cols-3">
         <Ranking title="Top 10 Teachers" rows={data?.bestTeachers || []} positive />
@@ -157,6 +186,84 @@ function ParticipationChart({ rows, rate }) {
             <b>{item.value}</b>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function EvaluationRankHighlights({ data }) {
+  const items = [
+    { label: 'Best Department', value: data?.bestDepartment?.name, score: data?.bestDepartment?.average },
+    { label: 'Worst Department', value: data?.worstDepartment?.name, score: data?.worstDepartment?.average, muted: true },
+    { label: 'Best Faculty', value: data?.bestFaculty?.name, score: data?.bestFaculty?.average },
+    { label: 'Worst Faculty', value: data?.worstFaculty?.name, score: data?.worstFaculty?.average, muted: true },
+    { label: 'Best Class', value: data?.highestRatedClass?.name, score: data?.highestRatedClass?.average },
+    { label: 'Worst Class', value: data?.lowestRatedClass?.name, score: data?.lowestRatedClass?.average, muted: true }
+  ];
+  return (
+    <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {items.map((item) => (
+        <div key={item.label} className="panel p-4">
+          <p className="text-xs font-bold uppercase text-slate-400">{item.label}</p>
+          <p className="mt-2 truncate text-sm font-bold text-huText">{item.value || 'No data yet'}</p>
+          <p className={`mt-1 text-xl font-black ${item.muted ? 'text-amber-600' : 'text-huGreen'}`}>{item.score || 0}/5</p>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function ClassReportHighlights({ reports }) {
+  const summary = [
+    { label: 'Best Department', name: reports?.bestDepartment?.department, score: reports?.bestDepartment?.averageScore },
+    { label: 'Best Faculty', name: reports?.bestFaculty?.faculty, score: reports?.bestFaculty?.averageScore },
+    { label: 'Best Class', name: reports?.bestClass?.className, score: reports?.bestClass?.averageScore },
+    { label: 'Lowest Class', name: reports?.worstClass?.className, score: reports?.worstClass?.averageScore, muted: true }
+  ];
+  return (
+    <section className="panel mt-6 p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-bold text-huText">Teacher Class Report Rankings</h2>
+          <p className="mt-1 text-sm text-slate-500">Rankings use submitted teacher class evaluations, including attendance, completion, and overall class score.</p>
+        </div>
+        <span className="w-fit rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{reports?.totalClassReports || 0} reports</span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {summary.map((item) => (
+          <div key={item.label} className="rounded-lg bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase text-slate-400">{item.label}</p>
+            <p className="mt-2 truncate text-sm font-bold text-huText">{item.name || 'No data yet'}</p>
+            <p className={`mt-1 text-2xl font-black ${item.muted ? 'text-amber-600' : 'text-huGreen'}`}>{item.score || 0}/5</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <ReportRanking title="Department Ranking" rows={reports?.departmentRankings || []} labelKey="department" />
+        <ReportRanking title="Faculty Ranking" rows={reports?.facultyRankings || []} labelKey="faculty" />
+        <ReportRanking title="Class Ranking" rows={reports?.classRankings || []} labelKey="className" />
+      </div>
+    </section>
+  );
+}
+
+function ReportRanking({ title, rows, labelKey }) {
+  return (
+    <div className="rounded-lg border border-slate-100 p-4">
+      <h3 className="text-sm font-bold text-huText">{title}</h3>
+      <div className="mt-3 space-y-2">
+        {rows.slice(0, 5).map((row) => (
+          <div key={`${title}-${row[labelKey]}`} className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2 text-sm">
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-slate-800">#{row.rank} {row[labelKey]}</p>
+              <p className="text-xs text-slate-500">{row.reports} reports · {row.attendancePercent}% attendance</p>
+            </div>
+            <span className="shrink-0 font-black text-huGreen">{row.averageScore}/5</span>
+          </div>
+        ))}
+        {!rows.length ? <p className="text-sm text-slate-500">No class report rankings yet.</p> : null}
       </div>
     </div>
   );

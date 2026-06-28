@@ -6,10 +6,10 @@ const { userFacultyId } = require('../utils/accessControl');
 
 const router = express.Router();
 
-router.get('/', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
   const query = {};
   if (req.user.role === 'dean' && userFacultyId(req.user)) query._id = userFacultyId(req.user);
-  if (['registration', 'department_head'].includes(req.user.role) && userFacultyId(req.user)) query._id = userFacultyId(req.user);
+  if (req.user.role === 'registration' && userFacultyId(req.user)) query._id = userFacultyId(req.user);
   if (req.query.status) query.status = req.query.status;
   if (req.query.search) query.name = new RegExp(req.query.search, 'i');
   res.json({ data: await Faculty.find(query).sort({ name: 1 }).lean() });

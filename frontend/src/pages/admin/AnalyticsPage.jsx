@@ -1,20 +1,71 @@
 import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Filter } from 'lucide-react';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
+import StatCard from '../../components/StatCard';
 
 const colors = ['#006B3C', '#C9932A', '#2563eb', '#dc2626', '#7c3aed'];
 
 export default function AnalyticsPage() {
   const [data, setData] = useState(null);
+  const [query, setQuery] = useState({});
+  const [faculties, setFaculties] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [classes, setClasses] = useState([]);
+
+  const load = () => {
+    const params = Object.fromEntries(Object.entries(query).filter(([, value]) => value));
+    api.get('/evaluations/analytics', { params }).then((res) => setData(res.data));
+  };
 
   useEffect(() => {
-    api.get('/evaluations/analytics').then((res) => setData(res.data));
+    Promise.all([api.get('/faculties'), api.get('/departments'), api.get('/classes')]).then(([facultyRes, departmentRes, classRes]) => {
+      setFaculties(facultyRes.data.data || []);
+      setDepartments(departmentRes.data.data || []);
+      setClasses(classRes.data.data || []);
+    });
+    load();
   }, []);
+
+  const filteredDepartments = departments.filter((item) => !query.facultyId || String(item.faculty) === String(query.facultyId));
+  const filteredClasses = classes.filter((item) => {
+    if (query.departmentId) return String(item.department) === String(query.departmentId);
+    if (query.facultyId) return String(item.faculty) === String(query.facultyId);
+    return true;
+  });
 
   return (
     <>
       <PageHeader title="Analytics" subtitle="Chart-ready lecturer, course, department, faculty, semester, participation, and heatmap analytics." />
+      <div className="panel mb-5 p-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <select className="input" value={query.facultyId || ''} onChange={(e) => setQuery({ ...query, facultyId: e.target.value, departmentId: '', classId: '' })}>
+            <option value="">All Faculties</option>
+            {faculties.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+          </select>
+          <select className="input" value={query.departmentId || ''} onChange={(e) => setQuery({ ...query, departmentId: e.target.value, classId: '' })}>
+            <option value="">All Departments</option>
+            {filteredDepartments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+          </select>
+          <select className="input" value={query.classId || ''} onChange={(e) => setQuery({ ...query, classId: e.target.value })}>
+            <option value="">All Classes</option>
+            {filteredClasses.map((item) => <option key={item._id} value={item._id}>{item.className}</option>)}
+          </select>
+          {['courseCode', 'lecturerId', 'semester', 'academicYear'].map((key) => (
+            <input key={key} className="input" placeholder={key} value={query[key] || ''} onChange={(e) => setQuery({ ...query, [key]: e.target.value })} />
+          ))}
+          <button className="btn-primary" onClick={load}><Filter size={16} />Apply Filters</button>
+        </div>
+      </div>
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <StatCard title="Best Department" value={data?.bestDepartment?.name || 'N/A'} />
+        <StatCard title="Worst Department" value={data?.worstDepartment?.name || 'N/A'} accent="gold" />
+        <StatCard title="Best Faculty" value={data?.bestFaculty?.name || 'N/A'} />
+        <StatCard title="Worst Faculty" value={data?.worstFaculty?.name || 'N/A'} accent="gold" />
+        <StatCard title="Best Class" value={data?.highestRatedClass?.name || 'N/A'} />
+        <StatCard title="Worst Class" value={data?.lowestRatedClass?.name || 'N/A'} accent="gold" />
+      </div>
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartPanel title="Lecturer Performance Trends">
           <ResponsiveContainer width="100%" height={300}>
@@ -49,6 +100,8 @@ export default function AnalyticsPage() {
             </BarChart>
           </ResponsiveContainer>
         </ChartPanel>
+        <RankingPanel title="Faculty Rankings" rows={data?.facultyRankings || []} />
+        <RankingPanel title="Class Rankings" rows={data?.classRankings || []} />
         <ChartPanel title="Participation Chart">
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
@@ -91,6 +144,22 @@ function ChartPanel({ title, children }) {
     <div className="panel p-5">
       <h2 className="mb-4 font-bold text-stone-900">{title}</h2>
       {children}
+    </div>
+  );
+}
+
+function RankingPanel({ title, rows }) {
+  return (
+    <div className="panel p-5">
+      <h2 className="mb-4 font-bold text-stone-900">{title}</h2>
+      <div className="space-y-2">
+        {rows.length ? rows.slice(0, 10).map((row) => (
+          <div key={row.id || row.name} className="flex items-center justify-between rounded-md bg-slate-50 p-3 text-sm">
+            <span className="font-semibold text-slate-700">#{row.rank} {row.name}</span>
+            <span className="font-black text-huGreen">{row.average}/5</span>
+          </div>
+        )) : <p className="text-sm text-slate-500">No ranking data yet.</p>}
+      </div>
     </div>
   );
 }

@@ -16,6 +16,29 @@ const calculateOverall = (payload) => Number((
   + (Number(payload.attendancePercent) / 20) * 0.3
 ).toFixed(2));
 
+const averageRows = (rows, idKey, labelKey = 'name') => {
+  const map = new Map();
+  rows.forEach((item) => {
+    const name = item[labelKey] || 'Unknown';
+    const key = String(item[idKey] || name);
+    const row = map.get(key) || { [labelKey]: name, reports: 0, scoreTotal: 0, completionTotal: 0, attendanceTotal: 0 };
+    row.reports += 1;
+    row.scoreTotal += Number(item.overallScore || 0);
+    row.completionTotal += Number(item.courseCompletion || 0);
+    row.attendanceTotal += Number(item.attendancePercent || 0);
+    map.set(key, row);
+  });
+  return [...map.values()]
+    .map((item) => ({
+      ...item,
+      averageScore: item.reports ? Number((item.scoreTotal / item.reports).toFixed(2)) : 0,
+      courseCompletion: item.reports ? Number((item.completionTotal / item.reports).toFixed(1)) : 0,
+      attendancePercent: item.reports ? Number((item.attendanceTotal / item.reports).toFixed(1)) : 0
+    }))
+    .sort((a, b) => b.averageScore - a.averageScore || b.attendancePercent - a.attendancePercent)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+};
+
 router.get('/options', protect, authorize('lecturer'), async (req, res) => {
   const assignments = await CourseAssignment.find({
     lecturerId: req.user.loginId,
@@ -105,17 +128,17 @@ router.post('/', protect, authorize('lecturer'), async (req, res) => {
   res.status(201).json(evaluation);
 });
 
-router.get('/admin', protect, authorize('admin', 'registration', 'department_head', 'dean'), async (req, res) => {
+router.get('/admin', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
   const filter = scopedQuery(req, {});
   ['faculty', 'department', 'className', 'lecturerId', 'semester', 'academicYear'].forEach((key) => {
     if (req.query[key]) filter[key] = req.query[key];
   });
   if (req.query.facultyId && req.user.role === 'admin') filter.facultyId = req.query.facultyId;
-  if (req.query.departmentId && req.user.role === 'admin') filter.departmentId = req.query.departmentId;
+  if (req.query.departmentId && ['admin', 'registration', 'dean'].includes(req.user.role)) filter.departmentId = req.query.departmentId;
   const data = await ClassEvaluation.find(filter).sort({ submittedAt: -1 }).lean();
   const classMap = new Map();
   data.forEach((item) => {
-    const key = `${item.faculty}|${item.className}`;
+    const key = String(item.classId || `${item.departmentId || item.department}|${item.className}`);
     const row = classMap.get(key) || {
       className: item.className,
       faculty: item.faculty,
@@ -152,12 +175,21 @@ router.get('/admin', protect, authorize('admin', 'registration', 'department_hea
   const facultyWinners = [...new Set(classRankings.map((item) => item.faculty))]
     .map((faculty) => classRankings.find((item) => item.faculty === faculty))
     .filter(Boolean);
+  const departmentRankings = averageRows(data, 'departmentId', 'department');
+  const facultyRankings = averageRows(data, 'facultyId', 'faculty');
 
   res.json({
     data,
     classRankings,
+    departmentRankings,
+    facultyRankings,
     facultyWinners,
     bestUniversityClass: classRankings[0] || null,
+    bestDepartment: departmentRankings[0] || null,
+    worstDepartment: [...departmentRankings].reverse().find((item) => item.reports > 0) || null,
+    bestFaculty: facultyRankings[0] || null,
+    worstFaculty: [...facultyRankings].reverse().find((item) => item.reports > 0) || null,
+    worstUniversityClass: [...classRankings].reverse().find((item) => item.reports > 0) || null,
     totals: {
       reports: data.length,
       classes: classRankings.length,

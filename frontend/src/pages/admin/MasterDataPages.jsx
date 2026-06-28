@@ -181,8 +181,8 @@ function MasterDataPage({ title, subtitle, endpoint, blank, fields, columns, row
       <section className="panel mb-5 p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={17} />
-            <input className="input pl-9" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && load()} placeholder={`Search ${title.toLowerCase()}`} />
+            <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+            <input className="input !pl-12" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && load()} placeholder={`Search ${title.toLowerCase()}`} />
           </div>
           <button className="btn-secondary" onClick={load}>Search</button>
         </div>
