@@ -9,7 +9,6 @@ const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const EvaluationsPage = lazy(() => import('./pages/admin/EvaluationsPage'));
 const ReportsPage = lazy(() => import('./pages/admin/ReportsPage'));
 const AnalyticsPage = lazy(() => import('./pages/admin/AnalyticsPage'));
-const ImportPage = lazy(() => import('./pages/admin/ImportPage'));
 const UserManagementPage = lazy(() => import('./pages/admin/UserManagementPage'));
 const RegistrationDashboard = lazy(() => import('./pages/registration/RegistrationDashboard'));
 const FacultyManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.FacultyManagementPage })));
@@ -77,7 +76,6 @@ export default function App() {
               <Route path="/admin/departments" element={<DepartmentManagementPage />} />
               <Route path="/admin/classes" element={<ClassManagementPage />} />
               <Route path="/admin/questions" element={<QuestionsPage />} />
-              <Route path="/admin/import" element={<ImportPage />} />
             </Route>
           </Route>
 

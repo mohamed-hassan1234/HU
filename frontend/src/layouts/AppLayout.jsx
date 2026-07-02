@@ -14,7 +14,6 @@ import {
   LogOut,
   Menu,
   ShieldCheck,
-  Upload,
   UserRound,
   Users,
   X
@@ -39,8 +38,7 @@ const adminLinks = [
   { section: 'Evaluation', label: 'Class Evaluations', to: '/admin/class-evaluations', icon: ClipboardPenLine },
   { section: 'Insights', label: 'Reports', to: '/admin/reports', icon: FileDown },
   { section: 'Insights', label: 'Analytics', to: '/admin/analytics', icon: BarChart3 },
-  { section: 'Account', label: 'Profile', to: '/admin/profile', icon: UserRound },
-  { section: 'Account', label: 'Import CSV', to: '/admin/import', icon: Upload }
+  { section: 'Account', label: 'Profile', to: '/admin/profile', icon: UserRound }
 ];
 
 const registrationLinks = [
