@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Download, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import api from '../api/axios';
 import { confirmDelete, toast } from '../utils/alerts';
+import BulkImportWizard from './BulkImportWizard';
 import EmptyState from './EmptyState';
 import PageHeader from './PageHeader';
 import { useAuth } from '../context/AuthContext';
@@ -12,7 +13,7 @@ const initialValues = (fields) =>
     return acc;
   }, {});
 
-export default function ResourcePage({ title, subtitle, endpoint, fields, columns, csvEndpoint }) {
+export default function ResourcePage({ title, subtitle, endpoint, fields, columns, csvEndpoint, bulkImport }) {
   const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState('');
@@ -20,6 +21,7 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(initialValues(fields));
   const [modalOpen, setModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const visibleRows = useMemo(() => rows, [rows]);
   const readOnly = user?.role === 'registration' && endpoint === '/courses';
@@ -103,6 +105,26 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
     window.URL.revokeObjectURL(url);
   };
 
+  const downloadTemplate = async () => {
+    const response = await api.get(`${bulkImport.endpoint}/template`, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = bulkImport.templateFileName;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const exportBulkRows = async () => {
+    const response = await api.get(`${bulkImport.endpoint}/export`, { params: { search, format: 'xlsx' }, responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = bulkImport.exportFileName;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       <PageHeader
@@ -110,19 +132,29 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
         subtitle={subtitle}
         actions={
           readOnly ? null : <>
-            <label className="btn-secondary cursor-pointer">
-              <Upload size={16} />
-              Import CSV
-              <input type="file" accept=".csv" className="hidden" onChange={importCsv} />
-            </label>
-            <button className="btn-secondary" onClick={exportCsv}>
-              <Download size={16} />
-              Export
-            </button>
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={16} />
-              Add
+              {bulkImport?.addLabel || 'Add'}
             </button>
+            {bulkImport ? (
+              <>
+                <button className="btn-secondary" onClick={() => setImportOpen(true)}><Upload size={16} />{bulkImport.importLabel}</button>
+                <button className="btn-secondary" onClick={downloadTemplate}><Download size={16} />{bulkImport.templateLabel}</button>
+                <button className="btn-secondary" onClick={exportBulkRows}><Download size={16} />{bulkImport.exportLabel}</button>
+              </>
+            ) : (
+              <>
+                <label className="btn-secondary cursor-pointer">
+                  <Upload size={16} />
+                  Import CSV
+                  <input type="file" accept=".csv" className="hidden" onChange={importCsv} />
+                </label>
+                <button className="btn-secondary" onClick={exportCsv}>
+                  <Download size={16} />
+                  Export
+                </button>
+              </>
+            )}
           </>
         }
       />
@@ -198,6 +230,7 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
           </form>
         </div>
       ) : null}
+      {importOpen && bulkImport ? <BulkImportWizard title={bulkImport.title} endpoint={bulkImport.endpoint} onClose={() => setImportOpen(false)} onImported={load} /> : null}
     </>
   );
 }

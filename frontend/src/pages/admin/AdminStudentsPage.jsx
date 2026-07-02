@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BarChart3, Download, Eye, Pencil, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
 import api from '../../api/axios';
+import BulkImportWizard from '../../components/BulkImportWizard';
 import EmptyState from '../../components/EmptyState';
 import PageHeader from '../../components/PageHeader';
 import { confirmDelete, toast } from '../../utils/alerts';
@@ -31,6 +32,7 @@ export default function AdminStudentsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(blankForm);
 
@@ -238,28 +240,23 @@ export default function AdminStudentsPage() {
     }
   };
 
-  const importCsv = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const data = new FormData();
-    data.append('file', file);
-    try {
-      await api.post('/students/import-csv', data);
-      toast.fire({ icon: 'success', title: 'Students imported' });
-      await load();
-    } catch (error) {
-      toast.fire({ icon: 'error', title: error.response?.data?.message || 'Import failed' });
-    } finally {
-      event.target.value = '';
-    }
-  };
-
-  const exportCsv = async () => {
-    const response = await api.get('/students/export-csv', { responseType: 'blob' });
+  const downloadStudentTemplate = async () => {
+    const response = await api.get('/students/template', { responseType: 'blob' });
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'students.csv';
+    link.download = 'student-import-template.xlsx';
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const exportStudents = async () => {
+    const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value && value !== 'evaluated' && value !== 'pending'));
+    const response = await api.get('/students/export', { params: { ...params, format: 'xlsx' }, responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'students.xlsx';
     link.click();
     window.URL.revokeObjectURL(url);
   };
@@ -276,9 +273,10 @@ export default function AdminStudentsPage() {
         actions={
           <>
             {selectedClass ? <button className="btn-secondary" onClick={() => { setSelectedClass(null); setPage(1); }}><ArrowLeft size={16} />Classes</button> : null}
-            <label className="btn-secondary cursor-pointer"><Upload size={16} />Import CSV<input type="file" accept=".csv" className="hidden" onChange={importCsv} /></label>
-            <button className="btn-secondary" onClick={exportCsv}><Download size={16} />Export</button>
             <button className="btn-primary" onClick={openCreate}><Plus size={16} />Add Student</button>
+            <button className="btn-secondary" onClick={() => setImportOpen(true)}><Upload size={16} />Bulk Import Students</button>
+            <button className="btn-secondary" onClick={downloadStudentTemplate}><Download size={16} />Download Student Template</button>
+            <button className="btn-secondary" onClick={exportStudents}><Download size={16} />Export Students</button>
           </>
         }
       />
@@ -425,6 +423,7 @@ export default function AdminStudentsPage() {
           </form>
         </div>
       ) : null}
+      {importOpen ? <BulkImportWizard title="Students" endpoint="/students" onClose={() => setImportOpen(false)} onImported={load} /> : null}
     </>
   );
 }

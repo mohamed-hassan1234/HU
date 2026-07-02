@@ -2,6 +2,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const Lecturer = require('../models/Lecturer');
 const User = require('../models/User');
+const Faculty = require('../models/Faculty');
+const Department = require('../models/Department');
 const Evaluation = require('../models/Evaluation');
 const Student = require('../models/Student');
 const CourseAssignment = require('../models/CourseAssignment');
@@ -9,6 +11,19 @@ const TeacherComment = require('../models/TeacherComment');
 const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
+const {
+  buildErrorRows,
+  ensureLimit,
+  mapRow,
+  normalizeLookup,
+  normalizeText,
+  readImportFile,
+  readSession,
+  removeSession,
+  sendRows,
+  sendTemplate,
+  writeSession
+} = require('../utils/bulkImport');
 const logActivity = require('../utils/logActivity');
 const { hydrateFacultyDepartment, scopedQuery, assertCanAccessFaculty, userFacultyId } = require('../utils/accessControl');
 
@@ -16,24 +31,94 @@ const router = express.Router();
 const manageLecturers = [protect, authorize('admin', 'registration')];
 
 const columns = [
+  { header: 'Lecturer ID', key: 'lecturerId' },
+  { header: 'Full Name', key: 'fullName' },
+  { header: 'Status', key: 'status' }
+];
+
+const legacyColumns = [
   { header: 'lecturer_id', key: 'lecturerId' },
   { header: 'full_name', key: 'fullName' },
   { header: 'status', key: 'status' }
 ];
 
+const lecturerImportFields = [
+  { header: 'Lecturer ID', key: 'lecturerId', aliases: ['lecturer_id', 'employee id', 'employee_id'] },
+  { header: 'Full Name', key: 'fullName', aliases: ['full_name', 'lecturer name', 'name'] },
+  { header: 'Password', key: 'password' },
+  { header: 'Status', key: 'status' }
+];
+
+const fullNameFromParts = (row) =>
+  [row.firstName, row.middleName, row.lastName].map(normalizeText).filter(Boolean).join(' ');
+
+const emailValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const phoneValid = (value) => /^[+\d\s().-]{6,20}$/.test(value);
+
+const duplicateQuery = (parts) => {
+  const $or = parts.filter((item) => Object.values(item)[0].$in?.length);
+  return $or.length ? { $or } : { _id: null };
+};
+
+const exportQuery = (req) => {
+  const { format, scope, search = '', page, limit, facultyId, departmentId, status } = req.query;
+  const query = scopedQuery(req, {});
+  if (search) query.$or = [{ lecturerId: new RegExp(search, 'i') }, { fullName: new RegExp(search, 'i') }];
+  if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
+  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
+  if (['active', 'inactive'].includes(status)) query.status = status;
+  return query;
+};
+
+const sendImportError = (res, error, fallback = 'Import failed') => {
+  res.status(error.statusCode || 500).json({ message: error.message || fallback });
+};
+
+const buildLecturerMasterData = async () => {
+  const [faculties, departments] = await Promise.all([
+    Faculty.find({ status: { $ne: 'inactive' } }).lean(),
+    Department.find({ status: { $ne: 'inactive' } }).lean()
+  ]);
+  const facultyMap = new Map();
+  faculties.forEach((faculty) => {
+    facultyMap.set(normalizeLookup(faculty.name), faculty);
+    if (faculty.code) facultyMap.set(normalizeLookup(faculty.code), faculty);
+  });
+  const departmentsByFaculty = new Map();
+  departments.forEach((department) => {
+    const facultyId = String(department.faculty);
+    [department.name, department.code].filter(Boolean).forEach((key) => {
+      departmentsByFaculty.set(`${facultyId}|${normalizeLookup(key)}`, department);
+    });
+  });
+  return { facultyMap, departmentsByFaculty };
+};
+
 const toLecturer = (body) => ({
-  lecturerId: body.lecturerId || body.lecturer_id,
+  lecturerId: body.lecturerId || body.lecturer_id || body.employeeId,
+  employeeId: body.employeeId || body.employee_id || body.lecturerId || body.lecturer_id,
+  firstName: body.firstName,
+  middleName: body.middleName,
+  lastName: body.lastName,
   fullName: body.fullName || body.full_name || body.lecturer_name,
+  gender: body.gender,
+  email: body.email,
+  phoneNumber: body.phoneNumber || body.phone_number,
   faculty: body.faculty,
   facultyId: body.facultyId || body.faculty_id,
   department: body.department,
   departmentId: body.departmentId || body.department_id,
+  position: body.position,
+  employmentType: body.employmentType || body.employment_type,
+  username: body.username,
   password: body.password,
+  notes: body.notes,
   status: String(body.status || 'active').toLowerCase()
 });
 
 const hydrateLecturer = async (body, req) => {
   const base = toLecturer(body);
+  if (!base.fullName) base.fullName = fullNameFromParts(base);
   if (req?.user?.role === 'registration') base.facultyId = userFacultyId(req.user);
   const hydrated = await hydrateFacultyDepartment({
     facultyId: base.facultyId,
@@ -50,6 +135,7 @@ const upsertLecturerUser = async (lecturer, password) => {
     user.role = 'lecturer';
     user.status = lecturer.status;
     user.fullName = lecturer.fullName;
+    user.email = lecturer.email;
     user.faculty = lecturer.faculty;
     user.facultyId = lecturer.facultyId;
     user.department = lecturer.department;
@@ -62,6 +148,7 @@ const upsertLecturerUser = async (lecturer, password) => {
       password: password || lecturer.lecturerId,
       role: 'lecturer',
       fullName: lecturer.fullName,
+      email: lecturer.email,
       faculty: lecturer.faculty,
       facultyId: lecturer.facultyId,
       department: lecturer.department,
@@ -69,6 +156,55 @@ const upsertLecturerUser = async (lecturer, password) => {
       status: lecturer.status
     });
   }
+};
+
+const validateLecturerRows = async (rawRows, req, fileName) => {
+  ensureLimit(rawRows);
+  const startedAt = Date.now();
+  const rows = rawRows.map((row, index) => {
+    const data = mapRow(row, lecturerImportFields);
+    data.employeeId = data.lecturerId;
+    data.status = normalizeLookup(data.status || 'active');
+    return { rowNumber: index + 2, data, errors: [], warnings: [] };
+  });
+  const ids = rows.map((row) => row.data.lecturerId).filter(Boolean);
+  const existingLecturers = await Lecturer.find(duplicateQuery([
+    { lecturerId: { $in: ids } },
+    { employeeId: { $in: ids } }
+  ])).lean();
+  const existingIds = new Set(existingLecturers.flatMap((item) => [item.lecturerId, item.employeeId]).filter(Boolean));
+  const seenIds = new Set();
+  const statuses = new Set(['active', 'inactive']);
+
+  rows.forEach((row) => {
+    const { data, errors, warnings } = row;
+    ['lecturerId', 'fullName', 'password', 'status'].forEach((field) => {
+      if (!normalizeText(data[field])) errors.push(`${field} is required`);
+    });
+    if (data.status && !statuses.has(normalizeLookup(data.status))) errors.push('Invalid status');
+    if (data.lecturerId && existingIds.has(data.lecturerId)) errors.push('Duplicate Lecturer ID already exists');
+    if (data.lecturerId && seenIds.has(data.lecturerId)) errors.push('Duplicate Lecturer ID inside file');
+    if (data.lecturerId) seenIds.add(data.lecturerId);
+    data.employeeId = data.lecturerId;
+  });
+
+  const validRecords = rows.filter((row) => !row.errors.length).length;
+  const invalidRecords = rows.length - validRecords;
+  return {
+    type: 'lecturers',
+    fileName,
+    createdAt: new Date(),
+    createdBy: req.user.loginId,
+    processingTimeMs: Date.now() - startedAt,
+    rows: rows.map((row) => ({ ...row, valid: row.errors.length === 0 })),
+    summary: {
+      totalRecords: rows.length,
+      validRecords,
+      invalidRecords,
+      duplicateRecords: rows.filter((row) => row.errors.some((error) => error.toLowerCase().includes('duplicate'))).length,
+      warningRecords: rows.filter((row) => row.warnings.length).length
+    }
+  };
 };
 
 router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
@@ -122,6 +258,100 @@ router.delete('/:id', manageLecturers, async (req, res) => {
   res.json({ message: 'Lecturer deleted' });
 });
 
+router.get('/template', manageLecturers, async (req, res) => {
+  const sample = {
+    'Lecturer ID': 'LEC001',
+    'Full Name': 'Mohamed Ali Hassan',
+    Password: '123456',
+    Status: 'active'
+  };
+  if (String(req.query.format).toLowerCase() === 'csv') {
+    return sendCsv(res, 'lecturer_import_template.csv', [Object.fromEntries(lecturerImportFields.map((field) => [field.key, sample[field.header] || '']))], lecturerImportFields.map((field) => ({ header: field.header, key: field.key })));
+  }
+  sendTemplate(res, 'lecturer_import_template.xlsx', lecturerImportFields, sample);
+});
+
+router.post('/bulk-import/validate', manageLecturers, upload.importFile.single('file'), async (req, res) => {
+  try {
+    const rawRows = await readImportFile(req.file);
+    const validation = await validateLecturerRows(rawRows, req, req.file.originalname);
+    const token = writeSession('lecturers', validation);
+    await logActivity(req, 'validate_import', 'lecturer', 'bulk', {
+      fileName: req.file.originalname,
+      numberOfRecords: validation.summary.totalRecords,
+      status: validation.summary.invalidRecords ? 'invalid' : 'valid'
+    });
+    res.json({ token, ...validation });
+  } catch (error) {
+    sendImportError(res, error, 'Validation failed');
+  }
+});
+
+router.get('/bulk-import/errors/:token', manageLecturers, async (req, res) => {
+  try {
+    const { data } = readSession('lecturers', req.params.token);
+    const rows = buildErrorRows(data.rows.filter((row) => !row.valid || row.warnings.length));
+    sendRows(req, res, 'lecturer_import_errors.csv', rows, [
+      { header: 'Row', key: 'Row' },
+      { header: 'Status', key: 'Status' },
+      { header: 'Errors', key: 'Errors' },
+      { header: 'Warnings', key: 'Warnings' },
+      ...lecturerImportFields.map((field) => ({ header: field.header, key: field.key }))
+    ]);
+  } catch (error) {
+    sendImportError(res, error, 'Error report failed');
+  }
+});
+
+router.post('/bulk-import/commit', manageLecturers, async (req, res) => {
+  try {
+    const startedAt = Date.now();
+    const { filePath, data } = readSession('lecturers', req.body.token);
+    if (data.summary.invalidRecords > 0) {
+      return res.status(400).json({ message: 'Import cannot continue until all validation errors are fixed', summary: data.summary });
+    }
+    const records = data.rows.map((row) => row.data);
+    const ids = records.map((item) => item.lecturerId);
+    const duplicateLecturers = await Lecturer.find(duplicateQuery([
+      { lecturerId: { $in: ids } },
+      { employeeId: { $in: ids } }
+    ])).lean();
+    if (duplicateLecturers.length) {
+      return res.status(409).json({ message: 'Duplicate records appeared after validation. Please validate the file again.' });
+    }
+    let imported = 0;
+    for (const record of records) {
+      const payload = await hydrateLecturer(record, req);
+      const loginPassword = payload.password || payload.lecturerId;
+      if (payload.password) payload.password = await bcrypt.hash(payload.password, 10);
+      const lecturer = await Lecturer.create(payload);
+      await upsertLecturerUser(lecturer, loginPassword);
+      imported += 1;
+    }
+    const summary = {
+      totalRecords: records.length,
+      importedSuccessfully: imported,
+      failedRecords: 0,
+      duplicateRecords: data.summary.duplicateRecords,
+      skippedRecords: 0,
+      processingTimeMs: Date.now() - startedAt,
+      successPercentage: records.length ? Number(((imported / records.length) * 100).toFixed(1)) : 0
+    };
+    await logActivity(req, 'import_bulk', 'lecturer', 'bulk', {
+      importedBy: req.user.loginId,
+      importDate: new Date(),
+      fileName: data.fileName,
+      numberOfRecords: records.length,
+      status: 'success',
+      summary
+    });
+    removeSession(filePath);
+    res.json({ message: 'Lecturers imported successfully', summary });
+  } catch (error) {
+    sendImportError(res, error, 'Import failed');
+  }
+});
+
 router.post('/import-csv', manageLecturers, upload.single('file'), async (req, res) => {
   const rows = await readCsv(req.file.path);
   let imported = 0;
@@ -142,8 +372,13 @@ router.post('/import-csv', manageLecturers, upload.single('file'), async (req, r
   res.json({ message: 'Lecturers imported', imported });
 });
 
+router.get('/export', manageLecturers, async (req, res) => {
+  const lecturers = await Lecturer.find(exportQuery(req)).lean();
+  sendRows(req, res, 'lecturers.csv', lecturers.map((item) => ({ ...item, employeeId: item.employeeId || item.lecturerId })), columns);
+});
+
 router.get('/export-csv', manageLecturers, async (req, res) => {
-  sendCsv(res, 'lecturers.csv', await Lecturer.find(scopedQuery(req, {})).lean(), columns);
+  sendCsv(res, 'lecturers.csv', await Lecturer.find(scopedQuery(req, {})).lean(), legacyColumns);
 });
 
 const average = (rows, key) => {

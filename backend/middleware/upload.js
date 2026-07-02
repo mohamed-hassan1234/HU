@@ -13,10 +13,27 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
+    const name = file.originalname.toLowerCase();
+    if (file.mimetype === 'text/csv' || name.endsWith('.csv')) {
       return cb(null, true);
     }
     cb(new Error('Only CSV files are allowed'));
+  }
+});
+
+upload.importFile = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    const name = file.originalname.toLowerCase();
+    if (
+      file.mimetype === 'text/csv' ||
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      name.endsWith('.csv') ||
+      name.endsWith('.xlsx')
+    ) {
+      return cb(null, true);
+    }
+    cb(new Error('Only CSV and Excel .xlsx files are allowed'));
   }
 });
 
