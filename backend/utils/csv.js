@@ -21,7 +21,8 @@ const readCsv = (filePath) =>
 
 const escapeCsv = (value) => {
   if (value === null || value === undefined) return '';
-  const stringValue = Array.isArray(value) ? value.join('|') : String(value);
+  const rawValue = Array.isArray(value) ? value.join('|') : String(value);
+  const stringValue = /^[=+\-@]/.test(rawValue) ? `'${rawValue}` : rawValue;
   if (/[",\n\r]/.test(stringValue)) return `"${stringValue.replace(/"/g, '""')}"`;
   return stringValue;
 };

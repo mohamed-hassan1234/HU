@@ -22,6 +22,7 @@ import {
 import { Download, Eye, FileDown, Filter } from 'lucide-react';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import StatCard from '../../components/StatCard';
 
 const PdfDownloadButton = lazy(() => import('../../reports/PdfDownloadButton'));
@@ -119,23 +120,10 @@ export default function ReportsPage() {
       <main>
         <section className="panel mb-5 p-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <select className="input" value={query.facultyId || ''} onChange={(e) => setQuery({ ...query, facultyId: e.target.value, departmentId: '', classId: '' })}>
-              <option value="">All Faculties</option>
-              {faculties.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-            </select>
-            <select className="input" value={query.departmentId || ''} onChange={(e) => setQuery({ ...query, departmentId: e.target.value, classId: '' })}>
-              <option value="">All Departments</option>
-              {filteredDepartments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-            </select>
-            <select className="input" value={query.classId || ''} onChange={(e) => setQuery({ ...query, classId: e.target.value })}>
-              <option value="">All Classes</option>
-              {filteredClasses.map((item) => <option key={item._id} value={item._id}>{item.className}</option>)}
-            </select>
-            <select className="input" value={query.status || ''} onChange={(e) => setQuery({ ...query, status: e.target.value })}>
-              <option value="">All Students</option>
-              <option value="evaluated">Evaluated</option>
-              <option value="not_evaluated">Not Evaluated</option>
-            </select>
+            <SearchableSelect value={query.facultyId || ''} onChange={(value) => setQuery({ ...query, facultyId: value, departmentId: '', classId: '' })} options={faculties.map((item) => ({ value: item._id, label: item.name }))} placeholder="All Faculties" label="Filter by faculty" />
+            <SearchableSelect value={query.departmentId || ''} onChange={(value) => setQuery({ ...query, departmentId: value, classId: '' })} options={filteredDepartments.map((item) => ({ value: item._id, label: item.name }))} placeholder="All Departments" label="Filter by department" />
+            <SearchableSelect value={query.classId || ''} onChange={(value) => setQuery({ ...query, classId: value })} options={filteredClasses.map((item) => ({ value: item._id, label: item.className }))} placeholder="All Classes" label="Filter by class" />
+            <SearchableSelect value={query.status || ''} onChange={(value) => setQuery({ ...query, status: value })} options={[{ value: 'evaluated', label: 'Evaluated' }, { value: 'not_evaluated', label: 'Not Evaluated' }]} placeholder="All Students" label="Filter by student status" />
             {textFilters.map((key) => <input key={key} className="input" placeholder={key} value={query[key] || ''} onChange={(e) => setQuery({ ...query, [key]: e.target.value })} />)}
             <button className="btn-primary" onClick={load}><Filter size={16} />Apply Filters</button>
           </div>

@@ -16,6 +16,7 @@ import {
 import { AlertTriangle, Bell, BookOpen, ClipboardCheck, GraduationCap, Medal, Star, TrendingUp, Users } from 'lucide-react';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import StatCard from '../../components/StatCard';
 import { toast } from '../../utils/alerts';
 
@@ -60,18 +61,9 @@ export default function AdminDashboard() {
 
       <div className="panel mb-5 p-4">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
-          <select className="input" value={filters.facultyId || ''} onChange={(e) => setFilters({ ...filters, facultyId: e.target.value, departmentId: '', classId: '' })}>
-            <option value="">All Faculties</option>
-            {faculties.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-          </select>
-          <select className="input" value={filters.departmentId || ''} onChange={(e) => setFilters({ ...filters, departmentId: e.target.value, classId: '' })}>
-            <option value="">All Departments</option>
-            {filteredDepartments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-          </select>
-          <select className="input" value={filters.classId || ''} onChange={(e) => setFilters({ ...filters, classId: e.target.value })}>
-            <option value="">All Classes</option>
-            {filteredClasses.map((item) => <option key={item._id} value={item._id}>{item.className}</option>)}
-          </select>
+          <SearchableSelect value={filters.facultyId || ''} onChange={(value) => setFilters({ ...filters, facultyId: value, departmentId: '', classId: '' })} options={faculties.map((item) => ({ value: item._id, label: item.name }))} placeholder="All Faculties" label="Filter by faculty" />
+          <SearchableSelect value={filters.departmentId || ''} onChange={(value) => setFilters({ ...filters, departmentId: value, classId: '' })} options={filteredDepartments.map((item) => ({ value: item._id, label: item.name }))} placeholder="All Departments" label="Filter by department" />
+          <SearchableSelect value={filters.classId || ''} onChange={(value) => setFilters({ ...filters, classId: value })} options={filteredClasses.map((item) => ({ value: item._id, label: item.className }))} placeholder="All Classes" label="Filter by class" />
           {['semester', 'lecturerId', 'courseCode', 'academicYear'].map((key) => (
             <input key={key} className="input" placeholder={key} value={filters[key] || ''} onChange={(e) => setFilters({ ...filters, [key]: e.target.value })} />
           ))}

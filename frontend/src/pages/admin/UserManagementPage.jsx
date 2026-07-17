@@ -3,6 +3,7 @@ import { Download, KeyRound, Pencil, Plus, Power, Search, Trash2, Upload } from 
 import api from '../../api/axios';
 import EmptyState from '../../components/EmptyState';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import { confirmDelete, toast } from '../../utils/alerts';
 
 const blankUser = {
@@ -154,9 +155,9 @@ export default function UserManagementPage() {
       <section className="panel mb-5 p-4">
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
           <input className="input" placeholder="Search users" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
-          <select className="input" value={filters.role} onChange={(event) => setFilters({ ...filters, role: event.target.value })}><option value="">All Roles</option>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select>
-          <select className="input" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All Statuses</option><option>active</option><option>inactive</option></select>
-          <select className="input" value={filters.facultyId} onChange={(event) => setFilters({ ...filters, facultyId: event.target.value })}><option value="">All Faculties</option>{faculties.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
+          <SearchableSelect value={filters.role} onChange={(value) => setFilters({ ...filters, role: value })} options={roleOptions} placeholder="All Roles" label="Filter by role" />
+          <SearchableSelect value={filters.status} onChange={(value) => setFilters({ ...filters, status: value })} options={['active', 'inactive']} placeholder="All Statuses" label="Filter by status" />
+          <SearchableSelect value={filters.facultyId} onChange={(value) => setFilters({ ...filters, facultyId: value })} options={faculties.map((item) => ({ value: item._id, label: item.name }))} placeholder="All Faculties" label="Filter by faculty" />
           <button className="btn-primary" onClick={load}><Search size={16} />Apply</button>
         </div>
       </section>
@@ -200,9 +201,9 @@ export default function UserManagementPage() {
               <Field label="Username"><input className="input" value={form.loginId} onChange={(event) => setForm({ ...form, loginId: event.target.value })} required disabled={Boolean(editing)} /></Field>
               <Field label="Email"><input className="input" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
               <Field label={editing ? 'New Password' : 'Password'}><input className="input" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required={!editing} /></Field>
-              <Field label="Role"><select className="input" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select></Field>
-              <Field label="Status"><select className="input" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>active</option><option>inactive</option></select></Field>
-              <Field label="Faculty"><select className="input" value={form.facultyId} onChange={(event) => setForm({ ...form, facultyId: event.target.value })} required><option value="">Select Faculty</option>{faculties.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select></Field>
+              <Field label="Role"><SearchableSelect value={form.role} onChange={(value) => setForm({ ...form, role: value })} options={roleOptions} placeholder="Select Role" label="Role" /></Field>
+              <Field label="Status"><SearchableSelect value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={['active', 'inactive']} placeholder="Select Status" label="Status" /></Field>
+              <Field label="Faculty"><SearchableSelect value={form.facultyId} onChange={(value) => setForm({ ...form, facultyId: value })} options={faculties.map((item) => ({ value: item._id, label: item.name }))} placeholder="Select Faculty" label="Faculty" required /></Field>
               <label className="sm:col-span-2"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Permissions (use | separator)</span><input className="input" value={form.permissions} onChange={(event) => setForm({ ...form, permissions: event.target.value })} placeholder="students.manage|assignments.manage|reports.department" /></label>
             </div>
             <div className="mt-5 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button><button className="btn-primary">Save User</button></div>

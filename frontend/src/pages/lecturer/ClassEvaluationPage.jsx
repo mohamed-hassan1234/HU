@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Award, BookCheck, CheckCircle2, ClipboardCheck, Save, Users } from 'lucide-react';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import { toast } from '../../utils/alerts';
 
 const qualities = ['excellent', 'good', 'average', 'poor'];
@@ -106,9 +107,18 @@ export default function ClassEvaluationPage() {
                 <span className="grid h-10 w-10 place-items-center rounded-lg bg-huGreen/10 text-huGreen"><BookCheck size={20} /></span>
                 <div><h2 className="font-bold text-huText">Assigned Course and Class</h2><p className="text-sm text-slate-500">Choose the exact assignment this report belongs to.</p></div>
               </div>
-              <select className="input mt-4" value={form.assignment} onChange={(event) => selectAssignment(event.target.value)} required>
-                {assignments.map((item) => <option key={item._id} value={item._id}>{item.courseCode} - {item.courseName} / {item.className} / {item.semester}</option>)}
-              </select>
+              <SearchableSelect
+                className="mt-4"
+                value={form.assignment}
+                onChange={selectAssignment}
+                options={assignments.map((item) => ({
+                  value: item._id,
+                  label: `${item.courseCode} - ${item.courseName} / ${item.className} / ${item.semester}`
+                }))}
+                placeholder="Select Assignment"
+                label="Assigned Course and Class"
+                required
+              />
               {activeAssignment ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <Info label="Class" value={activeAssignment.className} />
@@ -143,22 +153,21 @@ export default function ClassEvaluationPage() {
                 {['1st Place', '2nd Place', '3rd Place'].map((label, index) => (
                   <label key={label} className="block">
                     <span className="mb-1 block text-xs font-bold uppercase text-slate-500">{label}</span>
-                    <select
-                      className="input"
+                    <SearchableSelect
                       value={form.topStudents[index]}
-                      onChange={(event) => {
+                      onChange={(value) => {
                         const next = [...form.topStudents];
-                        next[index] = event.target.value;
+                        next[index] = value;
                         setForm({ ...form, topStudents: next });
                       }}
-                    >
-                      <option value="">Not selected</option>
-                      {(activeAssignment?.students || []).map((student) => (
-                        <option key={student.studentId} value={student.studentId} disabled={form.topStudents.some((id, selectedIndex) => selectedIndex !== index && id === student.studentId)}>
-                          {student.studentId} - {student.studentName}
-                        </option>
-                      ))}
-                    </select>
+                      options={(activeAssignment?.students || []).map((student) => ({
+                        value: student.studentId,
+                        label: `${student.studentId} - ${student.studentName}`,
+                        disabled: form.topStudents.some((id, selectedIndex) => selectedIndex !== index && id === student.studentId)
+                      }))}
+                      placeholder="Not selected"
+                      label={label}
+                    />
                   </label>
                 ))}
               </div>

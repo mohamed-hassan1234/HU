@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../utils/alerts';
 
@@ -123,13 +124,16 @@ export default function EvaluationFormPage() {
                     </label>
                     <label>
                       <span className="mb-1 block text-sm font-semibold text-slate-700">Course</span>
-                      <select className="input" value={selectedAssignmentId} onChange={(e) => setSelectedAssignmentId(e.target.value)}>
-                        {courses.filter((course) => !course.evaluated).map((course) => (
-                          <option key={course.assignmentId} value={course.assignmentId}>
-                            {course.courseCode} - {course.courseName}
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableSelect
+                        value={selectedAssignmentId}
+                        onChange={setSelectedAssignmentId}
+                        options={courses.filter((course) => !course.evaluated).map((course) => ({
+                          value: course.assignmentId,
+                          label: `${course.courseCode} - ${course.courseName}`
+                        }))}
+                        placeholder="Select Course"
+                        label="Course"
+                      />
                     </label>
                     <label>
                       <span className="mb-1 block text-sm font-semibold text-slate-700">Lecturer</span>

@@ -4,6 +4,7 @@ import api from '../../api/axios';
 import BulkImportWizard from '../../components/BulkImportWizard';
 import EmptyState from '../../components/EmptyState';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import { confirmDelete, toast } from '../../utils/alerts';
 
 const blankForm = {
@@ -289,19 +290,30 @@ export default function AdminStudentsPage() {
                 <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
                 <input className="input !pl-12" placeholder="Search class, faculty, department" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
               </div>
-              <select className="input" value={filters.facultyId} onChange={(event) => setFilters({ ...filters, facultyId: event.target.value, departmentId: '' })}>
-                <option value="">All Faculties</option>
-                {faculties.map((faculty) => <option key={faculty._id} value={faculty._id}>{faculty.name}</option>)}
-              </select>
-              <select className="input" value={filters.departmentId} onChange={(event) => setFilters({ ...filters, departmentId: event.target.value })}>
-                <option value="">All Departments</option>
-                {filterDepartments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}
-              </select>
-              <select className="input" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
-                <option value="">All Participation</option>
-                <option value="evaluated">Fully Evaluated</option>
-                <option value="pending">Has Pending</option>
-              </select>
+              <SearchableSelect
+                value={filters.facultyId}
+                onChange={(value) => setFilters({ ...filters, facultyId: value, departmentId: '' })}
+                options={faculties.map((faculty) => ({ value: faculty._id, label: faculty.name }))}
+                placeholder="All Faculties"
+                label="Filter by faculty"
+              />
+              <SearchableSelect
+                value={filters.departmentId}
+                onChange={(value) => setFilters({ ...filters, departmentId: value })}
+                options={filterDepartments.map((department) => ({ value: department._id, label: department.name }))}
+                placeholder="All Departments"
+                label="Filter by department"
+              />
+              <SearchableSelect
+                value={filters.status}
+                onChange={(value) => setFilters({ ...filters, status: value })}
+                options={[
+                  { value: 'evaluated', label: 'Fully Evaluated' },
+                  { value: 'pending', label: 'Has Pending' }
+                ]}
+                placeholder="All Participation"
+                label="Filter by participation"
+              />
               <button className="btn-primary" onClick={load}>Refresh</button>
             </div>
           </section>
@@ -351,11 +363,14 @@ export default function AdminStudentsPage() {
                 <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
                 <input className="input !pl-12" placeholder="Search student ID or name" value={studentSearch} onChange={(event) => { setStudentSearch(event.target.value); setPage(1); }} />
               </div>
-              <select className="input lg:w-52" value={studentStatus} onChange={(event) => { setStudentStatus(event.target.value); setPage(1); }}>
-                <option value="">All Students</option>
-                <option value="Evaluated">Evaluated</option>
-                <option value="Pending">Pending</option>
-              </select>
+              <SearchableSelect
+                className="lg:w-52"
+                value={studentStatus}
+                onChange={(value) => { setStudentStatus(value); setPage(1); }}
+                options={['Evaluated', 'Pending']}
+                placeholder="All Students"
+                label="Filter students by evaluation status"
+              />
               <div className="flex items-center justify-end gap-2 text-sm font-semibold text-slate-500"><BarChart3 size={17} />{selectedRows.length} records</div>
             </div>
           </div>
@@ -413,11 +428,11 @@ export default function AdminStudentsPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Student ID"><input className="input" value={form.studentId} onChange={(event) => setForm({ ...form, studentId: event.target.value })} required /></Field>
               <Field label="Full Name"><input className="input" value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} required /></Field>
-              <Field label="Faculty"><select className="input" value={form.facultyId} onChange={(event) => setForm({ ...form, facultyId: event.target.value, departmentId: '', classId: '' })} required><option value="">Select Faculty</option>{faculties.map((faculty) => <option key={faculty._id} value={faculty._id}>{faculty.name}</option>)}</select></Field>
-              <Field label="Department"><select className="input" value={form.departmentId} onChange={(event) => setForm({ ...form, departmentId: event.target.value, classId: '' })} required><option value="">Select Department</option>{availableDepartments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}</select></Field>
-              <Field label="Class"><select className="input" value={form.classId} onChange={(event) => setForm({ ...form, classId: event.target.value })} required><option value="">Select Class</option>{availableClasses.map((classItem) => <option key={classItem._id} value={classItem._id}>{classItem.className} / {classItem.semester} / {classItem.academicYear}</option>)}</select></Field>
+              <Field label="Faculty"><SearchableSelect value={form.facultyId} onChange={(value) => setForm({ ...form, facultyId: value, departmentId: '', classId: '' })} options={faculties.map((faculty) => ({ value: faculty._id, label: faculty.name }))} placeholder="Select Faculty" label="Faculty" required /></Field>
+              <Field label="Department"><SearchableSelect value={form.departmentId} onChange={(value) => setForm({ ...form, departmentId: value, classId: '' })} options={availableDepartments.map((department) => ({ value: department._id, label: department.name }))} placeholder="Select Department" label="Department" required /></Field>
+              <Field label="Class"><SearchableSelect value={form.classId} onChange={(value) => setForm({ ...form, classId: value })} options={availableClasses.map((classItem) => ({ value: classItem._id, label: `${classItem.className} / ${classItem.semester} / ${classItem.academicYear}` }))} placeholder="Select Class" label="Class" required /></Field>
               <Field label={editing ? 'New Password' : 'Password'}><input className="input" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required={!editing} /></Field>
-              <Field label="Status"><select className="input" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="active">active</option><option value="inactive">inactive</option></select></Field>
+              <Field label="Status"><SearchableSelect value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={['active', 'inactive']} placeholder="Select Status" label="Status" /></Field>
             </div>
             <div className="mt-5 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button><button className="btn-primary">Save Student</button></div>
           </form>

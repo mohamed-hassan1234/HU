@@ -3,6 +3,7 @@ import { Building2, CheckCircle2, Pencil, Plus, Power, Search, Trash2 } from 'lu
 import api from '../../api/axios';
 import EmptyState from '../../components/EmptyState';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import { confirmDelete, toast } from '../../utils/alerts';
 
 const statusOptions = ['active', 'inactive'];
@@ -231,17 +232,14 @@ function MasterDataPage({ title, subtitle, endpoint, blank, fields, columns, row
                   <label key={field.name}>
                     <span className="mb-1 block text-xs font-bold uppercase text-slate-500">{field.label}</span>
                     {field.type === 'select' ? (
-                      <select
-                        className="input"
+                      <SearchableSelect
                         value={form[field.name] || ''}
-                        onChange={(event) => setForm({ ...form, [field.name]: event.target.value, ...(field.name === 'faculty' ? { department: '' } : {}) })}
+                        onChange={(nextValue) => setForm({ ...form, [field.name]: nextValue, ...(field.name === 'faculty' ? { department: '' } : {}) })}
+                        options={(options || []).map((option) => (typeof option === 'string' ? option : { value: option.value, label: option.label }))}
+                        placeholder="Select"
+                        label={field.label}
                         required={field.required}
-                      >
-                        <option value="">Select</option>
-                        {(options || []).map((option) => typeof option === 'string'
-                          ? <option key={option} value={option}>{option}</option>
-                          : <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
+                      />
                     ) : (
                       <input className="input" value={form[field.name] || ''} onChange={(event) => setForm({ ...form, [field.name]: event.target.value })} required={field.required} />
                     )}

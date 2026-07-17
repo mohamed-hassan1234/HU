@@ -3,6 +3,8 @@ import { Download, Eye, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
 import EmptyState from '../../components/EmptyState';
+import BulkImportWizard from '../../components/BulkImportWizard';
+import SearchableSelect from '../../components/SearchableSelect';
 import { confirmDelete, toast } from '../../utils/alerts';
 
 const blankForm = {
@@ -27,6 +29,7 @@ export default function AdminAssignmentsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [participation, setParticipation] = useState(null);
   const [participationLoading, setParticipationLoading] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadAssignments = async () => {
@@ -125,22 +128,6 @@ export default function AdminAssignmentsPage() {
     }
   };
 
-  const importCsv = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const data = new FormData();
-    data.append('file', file);
-    try {
-      const response = await api.post('/assignments/import-csv', data);
-      toast.fire({ icon: 'success', title: `Imported ${response.data.imported}, skipped ${response.data.skipped || 0}` });
-      loadAssignments();
-    } catch (error) {
-      toast.fire({ icon: 'error', title: error.response?.data?.message || 'Import failed' });
-    } finally {
-      event.target.value = '';
-    }
-  };
-
   const exportCsv = async () => {
     const response = await api.get('/assignments/export-csv', { responseType: 'blob' });
     const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -159,11 +146,7 @@ export default function AdminAssignmentsPage() {
         actions={
           <>
             <button className="btn-primary" onClick={openCreate}><Plus size={16} />Add Assignment</button>
-            <label className="btn-secondary cursor-pointer">
-              <Upload size={16} />
-              Import Assignment CSV
-              <input type="file" accept=".csv" className="hidden" onChange={importCsv} />
-            </label>
+            <button className="btn-secondary" onClick={() => setImportOpen(true)}><Upload size={16} />Import Excel/CSV</button>
             <button className="btn-secondary" onClick={exportCsv}><Download size={16} />Export Assignment CSV</button>
           </>
         }
@@ -171,18 +154,27 @@ export default function AdminAssignmentsPage() {
 
       <div className="panel mb-5 p-4">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <select className="input" value={filters.courseCode} onChange={(e) => setFilters({ ...filters, courseCode: e.target.value })}>
-            <option value="">All Courses</option>
-            {courses.map((course) => <option key={course._id} value={course.courseCode}>{course.courseCode} - {course.courseName}</option>)}
-          </select>
-          <select className="input" value={filters.lecturerId} onChange={(e) => setFilters({ ...filters, lecturerId: e.target.value })}>
-            <option value="">All Lecturers</option>
-            {lecturers.map((lecturer) => <option key={lecturer._id} value={lecturer.lecturerId}>{lecturer.lecturerId} - {lecturer.fullName}</option>)}
-          </select>
-          <select className="input" value={filters.className} onChange={(e) => setFilters({ ...filters, className: e.target.value })}>
-            <option value="">All Classes</option>
-            {classes.map((className) => <option key={className} value={className}>{className}</option>)}
-          </select>
+          <SearchableSelect
+            value={filters.courseCode}
+            onChange={(value) => setFilters({ ...filters, courseCode: value })}
+            options={courses.map((course) => ({ value: course.courseCode, label: `${course.courseCode} - ${course.courseName}` }))}
+            placeholder="All Courses"
+            label="Filter by course"
+          />
+          <SearchableSelect
+            value={filters.lecturerId}
+            onChange={(value) => setFilters({ ...filters, lecturerId: value })}
+            options={lecturers.map((lecturer) => ({ value: lecturer.lecturerId, label: `${lecturer.lecturerId} - ${lecturer.fullName}` }))}
+            placeholder="All Lecturers"
+            label="Filter by lecturer"
+          />
+          <SearchableSelect
+            value={filters.className}
+            onChange={(value) => setFilters({ ...filters, className: value })}
+            options={classes}
+            placeholder="All Classes"
+            label="Filter by class"
+          />
           <FilterInput placeholder="Semester" value={filters.semester} options={semesters} onChange={(value) => setFilters({ ...filters, semester: value })} />
           <FilterInput placeholder="Academic Year" value={filters.academicYear} options={years} onChange={(value) => setFilters({ ...filters, academicYear: value })} />
           <button className="btn-primary" onClick={loadAssignments}>Apply Filters</button>
@@ -280,35 +272,45 @@ export default function AdminAssignmentsPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Assignment ID"><input className="input" value={form.assignmentId} onChange={(e) => setForm({ ...form, assignmentId: e.target.value })} required /></Field>
               <Field label="Step 1: Select Course">
-                <select className="input" value={form.courseCode} onChange={(e) => setForm({ ...form, courseCode: e.target.value })} required>
-                  <option value="">Select Course</option>
-                  {courses.map((course) => <option key={course._id} value={course.courseCode}>{course.courseCode} - {course.courseName}</option>)}
-                </select>
+                <SearchableSelect
+                  value={form.courseCode}
+                  onChange={(value) => setForm({ ...form, courseCode: value })}
+                  options={courses.map((course) => ({ value: course.courseCode, label: `${course.courseCode} - ${course.courseName}` }))}
+                  placeholder="Select Course"
+                  label="Select Course"
+                  required
+                />
               </Field>
               <Field label="Step 2: Select Lecturer">
-                <select className="input" value={form.lecturerId} onChange={(e) => setForm({ ...form, lecturerId: e.target.value })} required>
-                  <option value="">Select Lecturer</option>
-                  {lecturers.map((lecturer) => <option key={lecturer._id} value={lecturer.lecturerId}>{lecturer.lecturerId} - {lecturer.fullName}</option>)}
-                </select>
+                <SearchableSelect
+                  value={form.lecturerId}
+                  onChange={(value) => setForm({ ...form, lecturerId: value })}
+                  options={lecturers.map((lecturer) => ({ value: lecturer.lecturerId, label: `${lecturer.lecturerId} - ${lecturer.fullName}` }))}
+                  placeholder="Select Lecturer"
+                  label="Select Lecturer"
+                  required
+                />
               </Field>
               <Field label="Step 3: Select Class">
-                <select
-                  className="input"
+                <SearchableSelect
                   value={form.classId}
-                  onChange={(e) => {
-                    const classItem = masterClasses.find((item) => item._id === e.target.value);
+                  onChange={(value) => {
+                    const classItem = masterClasses.find((item) => item._id === value);
                     setForm({
                       ...form,
-                      classId: e.target.value,
+                      classId: value,
                       semester: classItem?.semester || form.semester,
                       academicYear: classItem?.academicYear || form.academicYear
                     });
                   }}
+                  options={masterClasses.map((classItem) => ({
+                    value: classItem._id,
+                    label: `${classItem.className} / ${classItem.departmentName}`
+                  }))}
+                  placeholder="Select Class"
+                  label="Select Class"
                   required
-                >
-                  <option value="">Select Class</option>
-                  {masterClasses.map((classItem) => <option key={classItem._id} value={classItem._id}>{classItem.className} / {classItem.departmentName}</option>)}
-                </select>
+                />
               </Field>
               <Field label="Enter Semester">
                 <input className="input" value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} placeholder="Semester 2 - 2024/2025" required />
@@ -317,10 +319,13 @@ export default function AdminAssignmentsPage() {
                 <input className="input" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} placeholder="2024/2025" required />
               </Field>
               <Field label="Status">
-                <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  <option value="active">active</option>
-                  <option value="inactive">inactive</option>
-                </select>
+                <SearchableSelect
+                  value={form.status}
+                  onChange={(value) => setForm({ ...form, status: value })}
+                  options={['active', 'inactive']}
+                  placeholder="Select Status"
+                  label="Status"
+                />
               </Field>
             </div>
             <div className="mt-5 flex justify-end gap-2">
@@ -329,6 +334,22 @@ export default function AdminAssignmentsPage() {
             </div>
           </form>
         </div>
+      ) : null}
+      {importOpen ? (
+        <BulkImportWizard
+          title="Course Assignments"
+          endpoint="/assignments"
+          onClose={() => setImportOpen(false)}
+          onImported={loadAssignments}
+          previewColumns={[
+            { header: 'Assignment ID', key: 'assignmentId' },
+            { header: 'Course', key: 'courseCode' },
+            { header: 'Class', key: 'className' },
+            { header: 'Lecturer', key: 'lecturerId' },
+            { header: 'Semester', key: 'semester' },
+            { header: 'Academic Year', key: 'academicYear' }
+          ]}
+        />
       ) : null}
     </>
   );

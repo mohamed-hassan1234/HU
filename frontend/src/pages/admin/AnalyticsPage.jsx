@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, Res
 import { Filter } from 'lucide-react';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import StatCard from '../../components/StatCard';
 
 const colors = ['#006B3C', '#C9932A', '#2563eb', '#dc2626', '#7c3aed'];
@@ -40,18 +41,9 @@ export default function AnalyticsPage() {
       <PageHeader title="Analytics" subtitle="Chart-ready lecturer, course, department, faculty, semester, participation, and heatmap analytics." />
       <div className="panel mb-5 p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <select className="input" value={query.facultyId || ''} onChange={(e) => setQuery({ ...query, facultyId: e.target.value, departmentId: '', classId: '' })}>
-            <option value="">All Faculties</option>
-            {faculties.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-          </select>
-          <select className="input" value={query.departmentId || ''} onChange={(e) => setQuery({ ...query, departmentId: e.target.value, classId: '' })}>
-            <option value="">All Departments</option>
-            {filteredDepartments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-          </select>
-          <select className="input" value={query.classId || ''} onChange={(e) => setQuery({ ...query, classId: e.target.value })}>
-            <option value="">All Classes</option>
-            {filteredClasses.map((item) => <option key={item._id} value={item._id}>{item.className}</option>)}
-          </select>
+          <SearchableSelect value={query.facultyId || ''} onChange={(value) => setQuery({ ...query, facultyId: value, departmentId: '', classId: '' })} options={faculties.map((item) => ({ value: item._id, label: item.name }))} placeholder="All Faculties" label="Filter by faculty" />
+          <SearchableSelect value={query.departmentId || ''} onChange={(value) => setQuery({ ...query, departmentId: value, classId: '' })} options={filteredDepartments.map((item) => ({ value: item._id, label: item.name }))} placeholder="All Departments" label="Filter by department" />
+          <SearchableSelect value={query.classId || ''} onChange={(value) => setQuery({ ...query, classId: value })} options={filteredClasses.map((item) => ({ value: item._id, label: item.className }))} placeholder="All Classes" label="Filter by class" />
           {['courseCode', 'lecturerId', 'semester', 'academicYear'].map((key) => (
             <input key={key} className="input" placeholder={key} value={query[key] || ''} onChange={(e) => setQuery({ ...query, [key]: e.target.value })} />
           ))}

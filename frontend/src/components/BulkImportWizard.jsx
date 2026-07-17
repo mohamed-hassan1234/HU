@@ -14,7 +14,13 @@ const downloadBlob = (blob, filename) => {
   window.URL.revokeObjectURL(url);
 };
 
-export default function BulkImportWizard({ title, endpoint, onClose, onImported }) {
+const defaultPreviewColumns = [
+  { header: 'Name / ID', key: 'identity', render: (row) => row.data.fullName || `${row.data.firstName || ''} ${row.data.lastName || ''}`.trim() || row.data.studentId || row.data.lecturerId || row.data.employeeId },
+  { header: 'Faculty', key: 'faculty' },
+  { header: 'Department', key: 'department' }
+];
+
+export default function BulkImportWizard({ title, endpoint, onClose, onImported, previewColumns = defaultPreviewColumns }) {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [validation, setValidation] = useState(null);
@@ -125,7 +131,7 @@ export default function BulkImportWizard({ title, endpoint, onClose, onImported 
                 <div>
                   <FileSpreadsheet className="mx-auto text-huGreen" size={42} />
                   <p className="mt-3 font-bold text-huText">{file ? file.name : 'Drop Excel or CSV file here'}</p>
-                  <p className="mt-1 text-sm text-slate-500">Supported: .xlsx, .csv / Maximum 10,000 records / UTF-8 CSV</p>
+                  <p className="mt-1 text-sm text-slate-500">Supported: .xlsx, .csv / Maximum 5 MB and 10,000 records / UTF-8 CSV</p>
                   <label className="btn-secondary mt-4 cursor-pointer">
                     <Upload size={16} />
                     Choose File
@@ -158,9 +164,7 @@ export default function BulkImportWizard({ title, endpoint, onClose, onImported 
                     <tr>
                       <th className="px-3 py-2">Row</th>
                       <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Name / ID</th>
-                      <th className="px-3 py-2">Faculty</th>
-                      <th className="px-3 py-2">Department</th>
+                      {previewColumns.map((column) => <th key={column.key} className="px-3 py-2">{column.header}</th>)}
                       <th className="px-3 py-2">Errors</th>
                     </tr>
                   </thead>
@@ -169,13 +173,15 @@ export default function BulkImportWizard({ title, endpoint, onClose, onImported 
                       <tr key={row.rowNumber} className={row.valid ? 'bg-white' : 'bg-red-50/70'}>
                         <td className="whitespace-nowrap px-3 py-2 font-bold">{row.rowNumber}</td>
                         <td className="whitespace-nowrap px-3 py-2"><span className={`rounded px-2 py-1 font-bold ${row.valid ? 'bg-emerald-50 text-huGreen' : 'bg-red-100 text-red-700'}`}>{row.valid ? 'Valid' : 'Invalid'}</span></td>
-                        <td className="whitespace-nowrap px-3 py-2">{row.data.fullName || `${row.data.firstName || ''} ${row.data.lastName || ''}`.trim() || row.data.studentId || row.data.lecturerId || row.data.employeeId}</td>
-                        <td className="whitespace-nowrap px-3 py-2">{row.data.faculty}</td>
-                        <td className="whitespace-nowrap px-3 py-2">{row.data.department}</td>
+                        {previewColumns.map((column) => (
+                          <td key={column.key} className="whitespace-nowrap px-3 py-2">
+                            {column.render ? column.render(row) : row.data[column.key]}
+                          </td>
+                        ))}
                         <td className="min-w-64 px-3 py-2 text-red-700">{row.errors.join(' | ') || row.warnings.join(' | ') || '-'}</td>
                       </tr>
                     ))}
-                    {!previewRows.length ? <tr><td colSpan="6" className="px-3 py-8 text-center text-slate-500">Upload a file and validate it to preview records.</td></tr> : null}
+                    {!previewRows.length ? <tr><td colSpan={previewColumns.length + 3} className="px-3 py-8 text-center text-slate-500">Upload a file and validate it to preview records.</td></tr> : null}
                   </tbody>
                 </table>
               </div>

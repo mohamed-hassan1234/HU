@@ -5,6 +5,7 @@ import { confirmDelete, toast } from '../utils/alerts';
 import BulkImportWizard from './BulkImportWizard';
 import EmptyState from './EmptyState';
 import PageHeader from './PageHeader';
+import SearchableSelect from './SearchableSelect';
 import { useAuth } from '../context/AuthContext';
 
 const initialValues = (fields) =>
@@ -211,10 +212,13 @@ export default function ResourcePage({ title, subtitle, endpoint, fields, column
                 <label key={field.name} className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
                   <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{field.label}</span>
                   {field.type === 'select' ? (
-                    <select className="input" value={form[field.name]} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })}>
-                      <option value="">Select</option>
-                      {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
+                    <SearchableSelect
+                      value={form[field.name]}
+                      onChange={(nextValue) => setForm({ ...form, [field.name]: nextValue })}
+                      options={field.options.map((option) => (typeof option === 'string' ? option : { value: option.value, label: option.label }))}
+                      placeholder="Select"
+                      label={field.label}
+                    />
                   ) : field.type === 'textarea' ? (
                     <textarea className="input min-h-28" value={form[field.name]} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })} />
                   ) : (

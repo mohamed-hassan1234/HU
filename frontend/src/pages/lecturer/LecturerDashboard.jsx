@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { Award, BarChart3, BookOpen, ClipboardCheck, Eye, Medal, MessageSquare, Send, Star, Trophy, Users } from 'lucide-react';
 import api from '../../api/axios';
 import PageHeader from '../../components/PageHeader';
+import SearchableSelect from '../../components/SearchableSelect';
 import StatCard from '../../components/StatCard';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../utils/alerts';
@@ -74,9 +75,7 @@ export default function LecturerDashboard() {
         <div className="panel p-5">
           <h2 className="flex items-center gap-2 font-bold text-huText"><MessageSquare size={18} /> Class Comment System</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <select className="input" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
-              {(summary?.assignedClasses || []).map((item) => <option key={item}>{item}</option>)}
-            </select>
+            <SearchableSelect value={selectedClass} onChange={setSelectedClass} options={summary?.assignedClasses || []} placeholder="Select Class" label="Comment class" />
             <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
               {['general', 'attendance', 'participation', 'coverage', 'assignments', 'practical'].map((item) => <option key={item}>{item}</option>)}
             </select>
@@ -264,9 +263,7 @@ function ClassAnalysis({ classes, activeClass, selectedClass, setSelectedClass }
   return (
     <div className="panel p-5">
       <h2 className="flex items-center gap-2 font-bold text-huText"><Users size={18} /> Class Analysis</h2>
-      <select className="input mt-4" value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}>
-        {classes.map((item) => <option key={item}>{item}</option>)}
-      </select>
+      <SearchableSelect className="mt-4" value={selectedClass} onChange={setSelectedClass} options={classes} placeholder="Select Class" label="Class analysis" />
       {activeClass ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Metric label="Attendance Quality" value={activeClass.attendanceQuality} />
