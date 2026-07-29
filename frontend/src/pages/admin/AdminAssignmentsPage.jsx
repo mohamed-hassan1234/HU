@@ -31,6 +31,9 @@ const optionText = (...values) => values.map(safeText).filter(Boolean).join(' ')
 export default function AdminAssignmentsPage() {
   const [assignments, setAssignments] = useState([]);
   const [courses, setCourses] = useState([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [coursesError, setCoursesError] = useState('');
+  const [courseSearch, setCourseSearch] = useState('');
   const [lecturers, setLecturers] = useState([]);
   const [masterClasses, setMasterClasses] = useState([]);
   const [classStudents, setClassStudents] = useState([]);
@@ -61,11 +64,34 @@ export default function AdminAssignmentsPage() {
     }
   };
 
+  const mergeCourses = (current, incoming) => {
+    const map = new Map(current.map((course) => [course.courseCode, course]));
+    incoming.forEach((course) => {
+      if (course?.courseCode) map.set(course.courseCode, course);
+    });
+    return [...map.values()].sort((a, b) => String(a.courseCode).localeCompare(String(b.courseCode)));
+  };
+
+  const searchCourses = async (search = '') => {
+    setCoursesLoading(true);
+    setCoursesError('');
+    try {
+      const { data } = await api.get('/courses', {
+        params: { search: search.trim(), status: 'active', limit: 200 }
+      });
+      setCourses((current) => mergeCourses(current, data.data || []));
+    } catch (error) {
+      setCoursesError(error.response?.data?.message || 'Unable to load courses. Please try again.');
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
   useEffect(() => {
     setOptionsLoading(true);
     setOptionsError('');
     Promise.all([
-      api.get('/courses', { params: { limit: 500 } }),
+      api.get('/courses', { params: { status: 'active', limit: 2000 } }),
       api.get('/lecturers', { params: { limit: 500 } }),
       api.get('/classes')
     ]).then(([courseRes, lecturerRes, masterClassesRes]) => {
@@ -84,6 +110,13 @@ export default function AdminAssignmentsPage() {
   useEffect(() => {
     loadAssignments();
   }, []);
+
+  useEffect(() => {
+    const query = courseSearch.trim();
+    if (query.length < 2) return undefined;
+    const timer = window.setTimeout(() => searchCourses(query), 250);
+    return () => window.clearTimeout(timer);
+  }, [courseSearch]);
 
   useEffect(() => {
     if (!modalOpen || !form.classId) {
@@ -272,8 +305,9 @@ export default function AdminAssignmentsPage() {
             options={courseOptions}
             placeholder="All Courses"
             label="Filter by course"
-            loading={optionsLoading}
-            error={optionsError}
+            loading={optionsLoading || coursesLoading}
+            error={optionsError || coursesError}
+            onSearchChange={setCourseSearch}
           />
           <SearchableSelect
             value={filters.lecturerId}
@@ -410,8 +444,9 @@ export default function AdminAssignmentsPage() {
                   options={courseOptions}
                   placeholder="Select Course"
                   label="Select Course"
-                  loading={optionsLoading}
-                  error={optionsError}
+                  loading={optionsLoading || coursesLoading}
+                  error={optionsError || coursesError}
+                  onSearchChange={setCourseSearch}
                   required
                 />
               </Field>

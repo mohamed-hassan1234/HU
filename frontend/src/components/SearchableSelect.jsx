@@ -24,7 +24,8 @@ export default function SearchableSelect({
   loading = false,
   loadingText = 'Loading...',
   error = '',
-  errorText
+  errorText,
+  onSearchChange
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -167,7 +168,10 @@ export default function SearchableSelect({
                 ref={searchRef}
                 className="input !py-2 !pl-9 !pr-8"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  onSearchChange?.(event.target.value);
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder="Search"
                 aria-label={`Search ${label || placeholder}`}
@@ -176,7 +180,10 @@ export default function SearchableSelect({
                 <button
                   type="button"
                   className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  onClick={() => setQuery('')}
+                  onClick={() => {
+                    setQuery('');
+                    onSearchChange?.('');
+                  }}
                   aria-label="Clear search"
                 >
                   <X size={14} />

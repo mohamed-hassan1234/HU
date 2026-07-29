@@ -24,11 +24,12 @@ const toCourse = (body) => ({
 });
 
 router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
-  const { search = '', page = 1, limit = 10, facultyId, departmentId } = req.query;
+  const { search = '', page = 1, limit = 10, facultyId, departmentId, status } = req.query;
   const query = scopedQuery(req, {});
   if (search) query.$or = [{ courseCode: new RegExp(search, 'i') }, { courseName: new RegExp(search, 'i') }];
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
   if (departmentId && ['admin', 'registration', 'dean'].includes(req.user.role)) query.departmentId = departmentId;
+  if (['active', 'inactive'].includes(status)) query.status = status;
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     Course.find(query).sort({ courseCode: 1 }).skip(skip).limit(Number(limit)),
