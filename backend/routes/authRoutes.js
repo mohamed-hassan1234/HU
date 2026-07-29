@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Student = require('../models/Student');
 const Lecturer = require('../models/Lecturer');
@@ -8,6 +9,15 @@ const { protect } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
 
 const router = express.Router();
+
+const asyncRoute = (handler) => (req, res, next) => {
+  Promise.resolve(handler(req, res, next)).catch(next);
+};
+
+const requireDatabase = (req, res, next) => {
+  if (mongoose.connection.readyState === 1) return next();
+  return res.status(503).json({ message: 'Database connection is unavailable. Please check MongoDB configuration.' });
+};
 
 const signToken = (user) =>
   jwt.sign(
@@ -47,11 +57,11 @@ const getProfile = async (user) => {
   };
 };
 
-router.post('/login', async (req, res) => {
+router.post('/login', requireDatabase, asyncRoute(async (req, res) => {
   const { loginId, password } = req.body;
   if (!loginId || !password) return res.status(400).json({ message: 'Login ID and password are required' });
 
-  const user = await User.findOne({ loginId });
+  const user = await User.findOne({ loginId: loginId.trim() });
   if (!user || user.status !== 'active') return res.status(401).json({ message: 'Invalid credentials' });
 
   const valid = await user.comparePassword(password);
@@ -63,13 +73,13 @@ router.post('/login', async (req, res) => {
   const safeUser = user.toObject();
   delete safeUser.password;
   res.json({ token: signToken(user), user: safeUser, profile: await getProfile(user) });
-});
+}));
 
-router.get('/me', protect, async (req, res) => {
+router.get('/me', requireDatabase, protect, asyncRoute(async (req, res) => {
   res.json({ user: req.user, profile: await getProfile(req.user) });
-});
+}));
 
-router.put('/change-password', protect, async (req, res) => {
+router.put('/change-password', requireDatabase, protect, asyncRoute(async (req, res) => {
   const { currentPassword, newPassword, confirmPassword } = req.body;
   if (!currentPassword || !newPassword || !confirmPassword) {
     return res.status(400).json({ message: 'Current password, new password, and confirmation are required' });
@@ -95,6 +105,6 @@ router.put('/change-password', protect, async (req, res) => {
   await user.save();
   await logActivity(req, 'change_password', 'user_account', user._id.toString());
   res.json({ message: 'Password updated successfully', token: signToken(user) });
-});
+}));
 
 module.exports = router;

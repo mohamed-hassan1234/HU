@@ -12,6 +12,14 @@ const { scopedQuery } = require('../utils/accessControl');
 
 const router = express.Router();
 
+const safeText = (value) => String(value ?? '').trim();
+
+const assignmentAllowsStudent = (assignment, student) => (
+  assignment.assignmentMode !== 'students'
+  || !assignment.assignedStudents?.length
+  || assignment.assignedStudents.includes(student.studentId)
+);
+
 const buildFilter = (query) => {
   const filter = {};
   ['assignmentId', 'faculty', 'facultyId', 'department', 'departmentId', 'courseCode', 'lecturerId', 'className', 'classId', 'semester', 'academicYear'].forEach((key) => {
@@ -152,9 +160,12 @@ const getAnalyticsData = async (query = {}) => {
 
   const assignmentParticipation = assignments.map((assignment) => {
     const eligible = students.filter((student) => (
-      assignment.classId
-        ? String(student.classId) === String(assignment.classId)
-        : student.className === assignment.className && (!assignment.departmentId || String(student.departmentId) === String(assignment.departmentId))
+      (
+        assignment.classId
+          ? String(student.classId) === String(assignment.classId)
+          : student.className === assignment.className && (!assignment.departmentId || String(student.departmentId) === String(assignment.departmentId))
+      )
+      && assignmentAllowsStudent(assignment, student)
     )).length;
     const submitted = new Set(
       evaluations.filter((item) => item.assignmentId === assignment.assignmentId).map((item) => item.studentId)
@@ -255,11 +266,22 @@ const createEvaluation = async (req, res) => {
   const studentId = req.user.role === 'student' ? req.user.loginId : req.body.studentId;
   const student = await Student.findOne({ studentId });
   if (!student) return res.status(404).json({ message: 'Student profile not found' });
+  const classFilter = student.classId
+    ? { classId: student.classId }
+    : {
+      className: student.className,
+      ...(student.departmentId ? { departmentId: student.departmentId } : {})
+    };
 
   const assignment = await CourseAssignment.findOne({
     ...(req.body.assignmentId ? { assignmentId: req.body.assignmentId } : { courseCode: req.body.courseCode }),
-    className: student.className,
-    ...(student.departmentId ? { departmentId: student.departmentId } : {}),
+    ...classFilter,
+    $or: [
+      { assignmentMode: { $ne: 'students' } },
+      { assignedStudents: { $exists: false } },
+      { assignedStudents: { $size: 0 } },
+      { assignedStudents: student.studentId }
+    ],
     status: { $ne: 'inactive' }
   });
   if (!assignment) return res.status(404).json({ message: 'Course assignment not found for this student' });
@@ -343,7 +365,9 @@ const buildParticipationData = async (req) => {
   const rows = [];
   assignments.forEach((assignment) => {
     const classKey = String(assignment.classId || `${assignment.departmentId || assignment.department}|${assignment.className}`);
-    (studentsByClass.get(classKey) || []).forEach((student) => {
+    (studentsByClass.get(classKey) || [])
+      .filter((student) => assignmentAllowsStudent(assignment, student))
+      .forEach((student) => {
       const evaluation = evaluationMap.get(`${assignment.assignmentId}|${student.studentId}`);
       rows.push({
         assignmentId: assignment.assignmentId,

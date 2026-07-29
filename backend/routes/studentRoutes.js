@@ -306,7 +306,7 @@ const getUniqueClasses = async (req, res) => {
 router.get('/classes', manageStudents, getUniqueClasses);
 
 router.get('/', manageStudents, async (req, res) => {
-  const { search = '', page = 1, limit = 10, faculty, facultyId, department, departmentId, className, classId } = req.query;
+  const { search = '', page = 1, limit = 10, faculty, facultyId, department, departmentId, className, classId, status } = req.query;
   const query = scopedQuery(req, {});
   if (search) query.$or = [{ studentId: new RegExp(search, 'i') }, { fullName: new RegExp(search, 'i') }];
   if (faculty) query.faculty = faculty;
@@ -315,6 +315,7 @@ router.get('/', manageStudents, async (req, res) => {
   if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
   if (className) query.className = className;
   if (classId) query.classId = classId;
+  if (['active', 'inactive'].includes(status)) query.status = status;
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     Student.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
@@ -477,10 +478,21 @@ router.get('/export-csv', manageStudents, async (req, res) => {
 router.get('/me/courses', protect, authorize('student'), async (req, res) => {
   const student = await Student.findOne({ studentId: req.user.loginId });
   if (!student) return res.status(404).json({ message: 'Student profile not found' });
+  const classFilter = student.classId
+    ? { classId: student.classId }
+    : {
+      className: student.className,
+      ...(student.departmentId ? { departmentId: student.departmentId } : {})
+    };
   const [assignments, evaluations] = await Promise.all([
     CourseAssignment.find({
-      className: student.className,
-      ...(student.departmentId ? { departmentId: student.departmentId } : {}),
+      ...classFilter,
+      $or: [
+        { assignmentMode: { $ne: 'students' } },
+        { assignedStudents: { $exists: false } },
+        { assignedStudents: { $size: 0 } },
+        { assignedStudents: student.studentId }
+      ],
       status: { $ne: 'inactive' }
     }).sort({ courseCode: 1 }),
     Evaluation.find({ studentId: student.studentId })

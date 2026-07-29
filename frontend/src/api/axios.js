@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const defaultApiBaseUrl = import.meta.env.DEV
   ? 'http://localhost:5020/api'
-  : 'https://www.ctes.hu.edu.so/api';
+  : '/api';
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || defaultApiBaseUrl).replace(/\/+$/, '');
 

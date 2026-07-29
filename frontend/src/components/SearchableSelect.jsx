@@ -6,6 +6,7 @@ const normalizeOption = (option) => {
   return {
     value: option?.value ?? '',
     label: option?.label ?? option?.value ?? '',
+    searchText: option?.searchText ?? '',
     disabled: option?.disabled
   };
 };
@@ -19,7 +20,11 @@ export default function SearchableSelect({
   required = false,
   label,
   className = '',
-  noResultsText = 'No results found'
+  noResultsText = 'No results found',
+  loading = false,
+  loadingText = 'Loading...',
+  error = '',
+  errorText
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -29,13 +34,21 @@ export default function SearchableSelect({
   const reactId = useId();
   const listId = `select-${reactId.replace(/:/g, '')}`;
 
-  const normalizedOptions = useMemo(() => options.map(normalizeOption), [options]);
+  const normalizedOptions = useMemo(() => {
+    const map = new Map();
+    options.map(normalizeOption).forEach((option) => {
+      const key = String(option.value);
+      if (!key || map.has(key)) return;
+      map.set(key, option);
+    });
+    return [...map.values()];
+  }, [options]);
   const selected = normalizedOptions.find((option) => String(option.value) === String(value));
   const filteredOptions = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return normalizedOptions;
     return normalizedOptions.filter((option) =>
-      `${option.label} ${option.value}`.toLowerCase().includes(term)
+      `${option.label} ${option.value} ${option.searchText}`.trim().toLowerCase().includes(term)
     );
   }, [normalizedOptions, query]);
 
@@ -80,7 +93,7 @@ export default function SearchableSelect({
   };
 
   const handleKeyDown = (event) => {
-    if (disabled) return;
+    if (disabled || loading || error) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       moveActive(1);
@@ -172,7 +185,11 @@ export default function SearchableSelect({
             </div>
           </div>
           <ul id={listId} role="listbox" className="max-h-64 overflow-y-auto py-1">
-            {filteredOptions.map((option, index) => (
+            {loading ? (
+              <li className="px-3 py-6 text-center text-sm text-slate-500">{loadingText}</li>
+            ) : error ? (
+              <li className="px-3 py-6 text-center text-sm text-red-600">{errorText || error}</li>
+            ) : filteredOptions.map((option, index) => (
               <li
                 key={`${option.value}-${option.label}`}
                 role="option"
@@ -187,7 +204,7 @@ export default function SearchableSelect({
                 <span className="block truncate">{option.label}</span>
               </li>
             ))}
-            {!filteredOptions.length ? (
+            {!loading && !error && !filteredOptions.length ? (
               <li className="px-3 py-6 text-center text-sm text-slate-500">{noResultsText}</li>
             ) : null}
           </ul>

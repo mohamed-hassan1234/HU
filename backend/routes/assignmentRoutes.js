@@ -30,6 +30,7 @@ const manageAssignments = [protect, authorize('admin', 'registration')];
 
 const columns = [
   { header: 'assignment_id', key: 'assignmentId' },
+  { header: 'assignment_title', key: 'assignmentTitle' },
   { header: 'course_code', key: 'courseCode' },
   { header: 'course_name', key: 'courseName' },
   { header: 'class_name', key: 'className' },
@@ -37,6 +38,10 @@ const columns = [
   { header: 'academic_year', key: 'academicYear' },
   { header: 'lecturer_id', key: 'lecturerId' },
   { header: 'lecturer_name', key: 'lecturerName' },
+  { header: 'assignment_date', key: 'assignmentDate' },
+  { header: 'due_date', key: 'dueDate' },
+  { header: 'assignment_mode', key: 'assignmentMode' },
+  { header: 'assigned_students', key: 'assignedStudents' },
   { header: 'status', key: 'status' }
 ];
 
@@ -52,6 +57,8 @@ const assignmentImportFields = [
 
 const toAssignment = (body) => ({
   assignmentId: body.assignmentId || body.assignment_id,
+  assignmentTitle: body.assignmentTitle || body.assignment_title || body.title,
+  assignmentDescription: body.assignmentDescription || body.assignment_description || body.description,
   courseCode: body.courseCode || body.course_code,
   courseName: body.courseName || body.course_name,
   faculty: body.faculty,
@@ -64,8 +71,42 @@ const toAssignment = (body) => ({
   academicYear: body.academicYear || body.academic_year,
   lecturerId: body.lecturerId || body.lecturer_id,
   lecturerName: body.lecturerName || body.lecturer_name,
+  assignmentDate: body.assignmentDate || body.assignment_date,
+  dueDate: body.dueDate || body.due_date,
+  assignmentMode: body.assignmentMode || body.assignment_mode || (body.assignedStudents?.length ? 'students' : 'class'),
+  assignedStudents: body.assignedStudents || body.assigned_students || body.studentIds || body.student_ids || [],
+  createdBy: body.createdBy || body.created_by,
   status: String(body.status || 'active').toLowerCase()
 });
+
+const safeText = (value) => String(value ?? '').trim();
+
+const dateOnly = (value) => {
+  const text = safeText(value);
+  if (!text) return '';
+  return text.includes('T') ? text.split('T')[0] : text;
+};
+
+const isDateOnly = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const uniqueStudentIds = (value) => {
+  const source = Array.isArray(value)
+    ? value
+    : safeText(value).split(/[|,]/);
+  return [...new Set(source.map(safeText).filter(Boolean))];
+};
+
+const assignmentClassFilter = (assignment) => (
+  assignment.classId
+    ? { classId: assignment.classId }
+    : {
+      className: assignment.className,
+      ...(assignment.departmentId ? { departmentId: assignment.departmentId } : {})
+    }
+);
+
+const assignmentDisplayTitle = (assignment) =>
+  assignment.assignmentTitle || `${assignment.courseCode || 'Course'} - ${assignment.className || 'Class'}`;
 
 const duplicateQuery = (parts) => {
   const $or = parts.filter((item) => Object.values(item)[0].$in?.length);
@@ -268,10 +309,31 @@ const validateAssignmentRows = async (rawRows, req, fileName) => {
 };
 
 router.get('/', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
-  const { search = '', page = 1, limit = 10, courseCode, lecturerId, className, classId, semester, academicYear, departmentId } = req.query;
+  const {
+    search = '',
+    page = 1,
+    limit = 10,
+    courseCode,
+    lecturerId,
+    className,
+    classId,
+    semester,
+    academicYear,
+    departmentId,
+    status,
+    assignmentDate,
+    dueDate
+  } = req.query;
   const query = scopedQuery(req, {});
   if (req.user.role === 'lecturer') query.lecturerId = req.user.loginId;
-  if (search) query.$or = [{ courseCode: new RegExp(search, 'i') }, { courseName: new RegExp(search, 'i') }];
+  if (search) query.$or = [
+    { assignmentId: new RegExp(search, 'i') },
+    { assignmentTitle: new RegExp(search, 'i') },
+    { courseCode: new RegExp(search, 'i') },
+    { courseName: new RegExp(search, 'i') },
+    { className: new RegExp(search, 'i') },
+    { lecturerName: new RegExp(search, 'i') }
+  ];
   if (courseCode) query.courseCode = courseCode;
   if (lecturerId && req.user.role !== 'lecturer') query.lecturerId = lecturerId;
   if (className) query.className = className;
@@ -279,12 +341,15 @@ router.get('/', protect, authorize('admin', 'registration', 'dean', 'lecturer'),
   if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
   if (semester) query.semester = semester;
   if (academicYear) query.academicYear = academicYear;
+  if (['active', 'inactive'].includes(status)) query.status = status;
+  if (assignmentDate) query.assignmentDate = dateOnly(assignmentDate);
+  if (dueDate) query.dueDate = dateOnly(dueDate);
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
-    CourseAssignment.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    CourseAssignment.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
     CourseAssignment.countDocuments(query)
   ]);
-  res.json({ data, total, page: Number(page), pages: Math.ceil(total / Number(limit)) || 1 });
+  res.json({ data: await decorateAssignmentsWithStudentCounts(data), total, page: Number(page), pages: Math.ceil(total / Number(limit)) || 1 });
 });
 
 router.get('/:id/participation', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
@@ -296,8 +361,10 @@ router.get('/:id/participation', protect, authorize('admin', 'registration', 'de
 
   const [students, evaluations] = await Promise.all([
     Student.find({
-      className: assignment.className,
-      ...(assignment.departmentId ? { departmentId: assignment.departmentId } : {}),
+      ...assignmentClassFilter(assignment),
+      ...(assignment.assignmentMode === 'students' && assignment.assignedStudents?.length
+        ? { studentId: { $in: assignment.assignedStudents } }
+        : {}),
       status: 'active'
     }).sort({ fullName: 1 }).lean(),
     Evaluation.find({ assignment: assignment._id }).sort({ submittedAt: -1 }).lean()
@@ -308,6 +375,7 @@ router.get('/:id/participation', protect, authorize('admin', 'registration', 'de
     return {
       studentId: student.studentId,
       studentName: student.fullName,
+      className: student.className,
       faculty: student.faculty,
       department: student.department,
       status: evaluation ? 'submitted' : 'pending',
@@ -320,7 +388,11 @@ router.get('/:id/participation', protect, authorize('admin', 'registration', 'de
   const eligible = roster.length;
 
   res.json({
-    assignment,
+    assignment: {
+      ...assignment,
+      assignmentTitle: assignmentDisplayTitle(assignment),
+      assignedStudentCount: eligible
+    },
     totals: {
       eligible,
       submitted,
@@ -331,7 +403,12 @@ router.get('/:id/participation', protect, authorize('admin', 'registration', 'de
   });
 });
 
-const hydrateAssignment = async (payload) => {
+const hydrateAssignment = async (payload, options = {}) => {
+  payload.assignmentDate = dateOnly(payload.assignmentDate);
+  payload.dueDate = dateOnly(payload.dueDate);
+  payload.assignmentMode = payload.assignmentMode === 'students' ? 'students' : 'class';
+  payload.assignedStudents = uniqueStudentIds(payload.assignedStudents);
+
   const master = await hydrateFacultyDepartment({
     facultyId: payload.facultyId,
     departmentId: payload.departmentId,
@@ -339,8 +416,8 @@ const hydrateAssignment = async (payload) => {
     fallback: payload
   });
   const [course, lecturer] = await Promise.all([
-    Course.findOne({ courseCode: payload.courseCode }),
-    Lecturer.findOne({ lecturerId: payload.lecturerId })
+    Course.findOne({ courseCode: payload.courseCode, status: { $ne: 'inactive' } }),
+    Lecturer.findOne({ lecturerId: payload.lecturerId, status: { $ne: 'inactive' } })
   ]);
   if (!course) throw Object.assign(new Error('Selected course was not found'), { statusCode: 400 });
   if (!lecturer) throw Object.assign(new Error('Selected lecturer was not found'), { statusCode: 400 });
@@ -350,9 +427,57 @@ const hydrateAssignment = async (payload) => {
   return {
     ...payload,
     ...master,
+    assignmentTitle: safeText(payload.assignmentTitle) || `${course.courseCode} - ${master.className || payload.className}`,
     courseName: course.courseName,
-    lecturerName: lecturer.fullName
+    lecturerName: lecturer.fullName,
+    assignedStudents: payload.assignmentMode === 'students' ? payload.assignedStudents : [],
+    createdBy: payload.createdBy || options.createdBy
   };
+};
+
+const validateAssignmentPayload = async (payload) => {
+  const required = [
+    ['assignmentId', 'Assignment ID is required.'],
+    ['assignmentTitle', 'Assignment title is required.'],
+    ['courseCode', 'Please select a course.'],
+    ['classId', 'Please select a class.'],
+    ['lecturerId', 'Please select a lecturer.'],
+    ['assignmentDate', 'Assignment date is required.'],
+    ['dueDate', 'Due date is required.'],
+    ['semester', 'Semester is required.'],
+    ['academicYear', 'Academic year is required.']
+  ];
+  const missing = required.find(([field]) => !safeText(payload[field]));
+  if (missing) throw Object.assign(new Error(missing[1]), { statusCode: 400 });
+  if (!isDateOnly(payload.assignmentDate) || !isDateOnly(payload.dueDate)) {
+    throw Object.assign(new Error('Assignment date and due date must use YYYY-MM-DD format.'), { statusCode: 400 });
+  }
+  if (payload.dueDate < payload.assignmentDate) {
+    throw Object.assign(new Error('Due date cannot be earlier than the assignment date.'), { statusCode: 400 });
+  }
+
+  const classRecord = await ClassGroup.findById(payload.classId).lean();
+  if (!classRecord) throw Object.assign(new Error('The selected class could not be found.'), { statusCode: 400 });
+  if (classRecord.status === 'inactive') {
+    throw Object.assign(new Error('Closed classes cannot be used for new course assignments.'), { statusCode: 400 });
+  }
+
+  if (payload.assignmentMode === 'students' && !payload.assignedStudents.length) {
+    throw Object.assign(new Error('Please select at least one student.'), { statusCode: 400 });
+  }
+
+  if (payload.assignedStudents.length) {
+    const students = await Student.find({
+      studentId: { $in: payload.assignedStudents },
+      ...assignmentClassFilter(payload),
+      status: { $ne: 'inactive' }
+    }).select('studentId').lean();
+    const validIds = new Set(students.map((student) => student.studentId));
+    const invalidIds = payload.assignedStudents.filter((studentId) => !validIds.has(studentId));
+    if (invalidIds.length) {
+      throw Object.assign(new Error('One or more selected students do not belong to the selected class.'), { statusCode: 400 });
+    }
+  }
 };
 
 const ensureUniqueAssignment = async (payload, ignoreId) => {
@@ -372,8 +497,7 @@ const ensureUniqueAssignment = async (payload, ignoreId) => {
 
 const ensureStudentsExistForAssignment = async (payload) => {
   const exists = await Student.exists({
-    className: payload.className,
-    ...(payload.departmentId ? { departmentId: payload.departmentId } : {}),
+    ...assignmentClassFilter(payload),
     status: { $ne: 'inactive' }
   });
   if (!exists) {
@@ -384,12 +508,46 @@ const ensureStudentsExistForAssignment = async (payload) => {
   }
 };
 
+const decorateAssignmentsWithStudentCounts = async (assignments) => {
+  const classIds = [...new Set(assignments.map((assignment) => safeText(assignment.classId)).filter(Boolean))];
+  const fallbackPairs = assignments
+    .filter((assignment) => !assignment.classId && assignment.className)
+    .map((assignment) => ({
+      className: assignment.className,
+      ...(assignment.departmentId ? { departmentId: assignment.departmentId } : {})
+    }));
+  const $or = [
+    ...classIds.map((classId) => ({ classId })),
+    ...fallbackPairs
+  ];
+  const students = $or.length
+    ? await Student.find({ $or, status: { $ne: 'inactive' } }).select('studentId classId className departmentId').lean()
+    : [];
+  const counts = new Map();
+  students.forEach((student) => {
+    const classKey = safeText(student.classId) || `${safeText(student.departmentId)}|${student.className}`;
+    counts.set(classKey, (counts.get(classKey) || 0) + 1);
+  });
+  return assignments.map((assignment) => {
+    const classKey = safeText(assignment.classId) || `${safeText(assignment.departmentId)}|${assignment.className}`;
+    const assignedCount = assignment.assignmentMode === 'students'
+      ? (assignment.assignedStudents || []).length
+      : (counts.get(classKey) || 0);
+    return {
+      ...assignment,
+      assignmentTitle: assignmentDisplayTitle(assignment),
+      assignedStudentCount: assignedCount
+    };
+  });
+};
+
 router.post('/', manageAssignments, async (req, res) => {
   try {
     const base = toAssignment(req.body);
     if (req.user.role === 'registration') base.facultyId = userFacultyId(req.user);
-    const payload = await hydrateAssignment(base);
+    const payload = await hydrateAssignment(base, { createdBy: req.user.loginId });
     if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
+    await validateAssignmentPayload(payload);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload);
     const assignment = await CourseAssignment.create(payload);
@@ -527,8 +685,9 @@ router.put('/:id', manageAssignments, async (req, res) => {
     if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
     const base = toAssignment(req.body);
     if (req.user.role === 'registration') base.facultyId = userFacultyId(req.user);
-    const payload = await hydrateAssignment(base);
+    const payload = await hydrateAssignment(base, { createdBy: current.createdBy });
     if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
+    await validateAssignmentPayload(payload);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload, req.params.id);
     const assignment = await CourseAssignment.findByIdAndUpdate(req.params.id, payload, {

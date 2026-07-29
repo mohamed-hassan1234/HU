@@ -1,6 +1,7 @@
 const express = require('express');
 const ClassGroup = require('../models/Class');
 const Department = require('../models/Department');
+const CourseAssignment = require('../models/CourseAssignment');
 const { protect, authorize } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
 const { userFacultyId } = require('../utils/accessControl');
@@ -30,6 +31,14 @@ router.get('/', protect, authorize('admin', 'registration', 'dean', 'lecturer'),
   if (req.query.search) query.className = new RegExp(req.query.search, 'i');
   if (req.user.role === 'dean' && userFacultyId(req.user)) query.faculty = userFacultyId(req.user);
   if (req.user.role === 'registration' && userFacultyId(req.user)) query.faculty = userFacultyId(req.user);
+  if (req.user.role === 'lecturer') {
+    const assignments = await CourseAssignment.find({
+      lecturerId: req.user.loginId,
+      status: { $ne: 'inactive' },
+      classId: { $exists: true, $ne: null }
+    }).select('classId').lean();
+    query._id = { $in: [...new Set(assignments.map((assignment) => String(assignment.classId)))] };
+  }
   res.json({ data: await ClassGroup.find(query).sort({ academicYear: -1, semester: 1, className: 1 }).lean() });
 });
 
