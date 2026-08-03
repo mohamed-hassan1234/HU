@@ -23,7 +23,7 @@ const LecturerDashboard = lazy(() => import('./pages/lecturer/LecturerDashboard'
 const LecturerSummaryPage = lazy(() => import('./pages/lecturer/LecturerSummaryPage'));
 const LecturerReportsPage = lazy(() => import('./pages/lecturer/LecturerReportsPage'));
 const ClassEvaluationPage = lazy(() => import('./pages/lecturer/ClassEvaluationPage'));
-const LecturerQuestionsPage = lazy(() => import('./pages/lecturer/LecturerQuestionsPage'));
+const TeacherQuestionsPage = lazy(() => import('./pages/admin/TeacherQuestionsPage'));
 const AdminClassEvaluationsPage = lazy(() => import('./pages/admin/ClassEvaluationsPage'));
 
 const resourcePage = (name) => lazy(() =>
@@ -77,6 +77,7 @@ export default function App() {
               <Route path="/admin/departments" element={<DepartmentManagementPage />} />
               <Route path="/admin/classes" element={<ClassManagementPage />} />
               <Route path="/admin/questions" element={<QuestionsPage />} />
+              <Route path="/admin/teacher-questions" element={<TeacherQuestionsPage />} />
             </Route>
           </Route>
 
@@ -109,7 +110,6 @@ export default function App() {
               <Route path="/lecturer" element={<LecturerDashboard />} />
               <Route path="/lecturer/summary" element={<LecturerSummaryPage />} />
               <Route path="/lecturer/class-evaluation" element={<ClassEvaluationPage />} />
-              <Route path="/lecturer/questions" element={<LecturerQuestionsPage />} />
               <Route path="/lecturer/reports" element={<LecturerReportsPage />} />
               <Route path="/lecturer/profile" element={<ProfilePage />} />
             </Route>

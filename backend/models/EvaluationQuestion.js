@@ -9,7 +9,7 @@ const evaluationQuestionSchema = new mongoose.Schema(
     options: [{ type: String }],
     order: { type: Number, default: 0 },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
-    scope: { type: String, enum: ['global', 'lecturer'], default: 'global' },
+    scope: { type: String, enum: ['global', 'lecturer', 'all-teachers'], default: 'global' },
     lecturerId: { type: String, trim: true },
     courseCode: { type: String, trim: true }
   },

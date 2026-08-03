@@ -34,6 +34,7 @@ const adminLinks = [
   { section: 'University', label: 'Departments', to: '/admin/departments', icon: Building2 },
   { section: 'University', label: 'Classes', to: '/admin/classes', icon: GraduationCap },
   { section: 'Evaluation', label: 'Evaluation Questions', to: '/admin/questions', icon: HelpCircle },
+  { section: 'Evaluation', label: 'Teacher Questions', to: '/admin/teacher-questions', icon: HelpCircle },
   { section: 'Evaluation', label: 'Evaluations', to: '/admin/evaluations', icon: FileText },
   { section: 'Evaluation', label: 'Class Evaluations', to: '/admin/class-evaluations', icon: ClipboardPenLine },
   { section: 'Insights', label: 'Reports', to: '/admin/reports', icon: FileDown },
@@ -73,7 +74,6 @@ const lecturerLinks = [
   { section: 'Overview', label: 'Dashboard', to: '/lecturer', icon: Gauge },
   { section: 'Evaluation', label: 'My Evaluation Summary', to: '/lecturer/summary', icon: BarChart3 },
   { section: 'Evaluation', label: 'Evaluate My Classes', to: '/lecturer/class-evaluation', icon: ClipboardPenLine },
-  { section: 'Evaluation', label: 'My Evaluation Questions', to: '/lecturer/questions', icon: HelpCircle },
   { section: 'Evaluation', label: 'Course Reports', to: '/lecturer/reports', icon: FileText },
   { section: 'Account', label: 'Profile', to: '/lecturer/profile', icon: UserRound }
 ];

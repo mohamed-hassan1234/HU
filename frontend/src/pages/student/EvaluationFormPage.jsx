@@ -59,7 +59,7 @@ export default function EvaluationFormPage() {
       return;
     }
     api.get('/questions', {
-      params: { activeOnly: true, lecturerId: selectedCourse.lecturerId, courseCode: selectedCourse.courseCode }
+      params: { activeOnly: true, forStudent: true, lecturerId: selectedCourse.lecturerId, courseCode: selectedCourse.courseCode }
     }).then((questionsRes) => {
       const active = (questionsRes.data.data || [])
         .filter((q) => q.scope === 'lecturer' || allowedCategories.includes(q.category))

@@ -7,7 +7,6 @@ const logActivity = require('../utils/logActivity');
 
 const router = express.Router();
 const questionManagers = [protect, authorize('admin', 'registration')];
-const questionAuthors = [protect, authorize('admin', 'registration', 'lecturer')];
 
 const columns = [
   { header: 'question_id', key: 'questionId' },
@@ -29,24 +28,27 @@ const toQuestion = (body) => ({
   status: body.status || 'active'
 });
 
-const generateQuestionId = (lecturerId) => `LQ-${lecturerId}-${Date.now()}`;
+const generateQuestionId = (prefix) => `${prefix}-${Date.now()}`;
 
 router.get('/', protect, async (req, res) => {
-  const { search = '', category, activeOnly = 'false', mine, lecturerId, courseCode } = req.query;
+  const { search = '', category, activeOnly = 'false', scope, lecturerId, courseCode, forStudent } = req.query;
   const query = {};
   if (search) query.questionText = new RegExp(search, 'i');
   if (category) query.category = category;
   if (activeOnly === 'true') query.status = 'active';
 
-  if (mine === 'true') {
-    if (req.user.role !== 'lecturer') return res.status(403).json({ message: 'Only lecturers can view their own questions' });
-    query.scope = 'lecturer';
-    query.lecturerId = req.user.loginId;
-  } else if (lecturerId) {
+  if (forStudent === 'true' && lecturerId) {
     query.$or = [
       { scope: 'global' },
+      { scope: 'all-teachers' },
       { scope: 'lecturer', lecturerId, ...(courseCode ? { $or: [{ courseCode: { $in: ['', null] } }, { courseCode }] } : {}) }
     ];
+  } else if (scope === 'lecturer') {
+    if (!['admin', 'registration'].includes(req.user.role)) return res.status(403).json({ message: 'Not authorized to view teacher questions' });
+    query.$or = lecturerId ? [{ scope: 'lecturer', lecturerId }, { scope: 'all-teachers' }] : [{ scope: 'lecturer' }, { scope: 'all-teachers' }];
+  } else if (scope === 'all-teachers') {
+    if (!['admin', 'registration'].includes(req.user.role)) return res.status(403).json({ message: 'Not authorized to view teacher questions' });
+    query.scope = 'all-teachers';
   } else {
     query.scope = 'global';
   }
@@ -55,39 +57,40 @@ router.get('/', protect, async (req, res) => {
   res.json({ data });
 });
 
-router.post('/', questionAuthors, async (req, res) => {
+router.post('/', questionManagers, async (req, res) => {
   const payload = toQuestion(req.body);
-  if (req.user.role === 'lecturer') {
+  if (req.body.scope === 'lecturer') {
+    if (!req.body.lecturerId) return res.status(400).json({ message: 'Select the teacher this question belongs to' });
     payload.scope = 'lecturer';
-    payload.lecturerId = req.user.loginId;
+    payload.lecturerId = req.body.lecturerId;
     payload.courseCode = req.body.courseCode || '';
-    if (!payload.questionId) payload.questionId = generateQuestionId(req.user.loginId);
+    if (!payload.questionId) payload.questionId = generateQuestionId(`LQ-${req.body.lecturerId}`);
+  } else if (req.body.scope === 'all-teachers') {
+    payload.scope = 'all-teachers';
+    payload.courseCode = '';
+    if (!payload.questionId) payload.questionId = generateQuestionId('ATQ');
   } else {
     payload.scope = 'global';
-    payload.lecturerId = undefined;
-    payload.courseCode = undefined;
   }
   const question = await EvaluationQuestion.create(payload);
   await logActivity(req, 'create', 'question', question.questionId);
   res.status(201).json(question);
 });
 
-router.put('/:id', questionAuthors, async (req, res) => {
+router.put('/:id', questionManagers, async (req, res) => {
   const existing = await EvaluationQuestion.findById(req.params.id);
   if (!existing) return res.status(404).json({ message: 'Question not found' });
-  if (req.user.role === 'lecturer' && (existing.scope !== 'lecturer' || existing.lecturerId !== req.user.loginId)) {
-    return res.status(403).json({ message: 'You can only edit your own questions' });
-  }
 
   const payload = toQuestion(req.body);
-  if (req.user.role === 'lecturer') {
+  if (existing.scope === 'lecturer') {
     payload.scope = 'lecturer';
-    payload.lecturerId = req.user.loginId;
-    payload.courseCode = req.body.courseCode || '';
+    payload.lecturerId = req.body.lecturerId || existing.lecturerId;
+    payload.courseCode = req.body.courseCode ?? existing.courseCode;
+  } else if (existing.scope === 'all-teachers') {
+    payload.scope = 'all-teachers';
+    payload.courseCode = '';
   } else {
-    payload.scope = existing.scope;
-    payload.lecturerId = existing.lecturerId;
-    payload.courseCode = existing.courseCode;
+    payload.scope = 'global';
   }
 
   const question = await EvaluationQuestion.findByIdAndUpdate(req.params.id, payload, {
@@ -98,14 +101,10 @@ router.put('/:id', questionAuthors, async (req, res) => {
   res.json(question);
 });
 
-router.delete('/:id', questionAuthors, async (req, res) => {
-  const existing = await EvaluationQuestion.findById(req.params.id);
-  if (!existing) return res.status(404).json({ message: 'Question not found' });
-  if (req.user.role === 'lecturer' && (existing.scope !== 'lecturer' || existing.lecturerId !== req.user.loginId)) {
-    return res.status(403).json({ message: 'You can only delete your own questions' });
-  }
-  await EvaluationQuestion.findByIdAndDelete(req.params.id);
-  await logActivity(req, 'delete', 'question', existing.questionId);
+router.delete('/:id', questionManagers, async (req, res) => {
+  const question = await EvaluationQuestion.findByIdAndDelete(req.params.id);
+  if (!question) return res.status(404).json({ message: 'Question not found' });
+  await logActivity(req, 'delete', 'question', question.questionId);
   res.json({ message: 'Question deleted' });
 });
 
