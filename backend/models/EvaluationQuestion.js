@@ -8,7 +8,10 @@ const evaluationQuestionSchema = new mongoose.Schema(
     inputType: { type: String, enum: ['likert', 'star', 'radio', 'textarea'], default: 'likert' },
     options: [{ type: String }],
     order: { type: Number, default: 0 },
-    status: { type: String, enum: ['active', 'inactive'], default: 'active' }
+    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+    scope: { type: String, enum: ['global', 'lecturer'], default: 'global' },
+    lecturerId: { type: String, trim: true },
+    courseCode: { type: String, trim: true }
   },
   { timestamps: true }
 );

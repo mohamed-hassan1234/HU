@@ -616,7 +616,6 @@ router.get('/bulk-import/errors/:token', manageAssignments, async (req, res) => 
 });
 
 router.post('/bulk-import/commit', manageAssignments, async (req, res) => {
-  let session;
   try {
     const startedAt = Date.now();
     const { filePath, data } = readSession('assignments', req.body.token);
@@ -641,20 +640,17 @@ router.post('/bulk-import/commit', manageAssignments, async (req, res) => {
       return res.status(409).json({ message: 'Duplicate records appeared after validation. Please validate the file again.' });
     }
 
-    session = await mongoose.startSession();
     let imported = 0;
-    await session.withTransaction(async () => {
-      for (const record of records) {
-        let payload = toAssignment(record);
-        if (req.user.role === 'registration') payload.facultyId = userFacultyId(req.user);
-        payload = await hydrateAssignment(payload);
-        if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
-        await ensureStudentsExistForAssignment(payload);
-        await ensureUniqueAssignment(payload);
-        await CourseAssignment.create([payload], { session });
-        imported += 1;
-      }
-    });
+    for (const record of records) {
+      let payload = toAssignment(record);
+      if (req.user.role === 'registration') payload.facultyId = userFacultyId(req.user);
+      payload = await hydrateAssignment(payload);
+      if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
+      await ensureStudentsExistForAssignment(payload);
+      await ensureUniqueAssignment(payload);
+      await CourseAssignment.create(payload);
+      imported += 1;
+    }
 
     const summary = {
       totalRecords: records.length,
@@ -677,8 +673,6 @@ router.post('/bulk-import/commit', manageAssignments, async (req, res) => {
     res.json({ message: 'Course assignments imported successfully', summary });
   } catch (error) {
     sendImportError(res, error, 'Import failed');
-  } finally {
-    if (session) session.endSession();
   }
 });
 

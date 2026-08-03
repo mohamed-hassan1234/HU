@@ -23,6 +23,7 @@ const LecturerDashboard = lazy(() => import('./pages/lecturer/LecturerDashboard'
 const LecturerSummaryPage = lazy(() => import('./pages/lecturer/LecturerSummaryPage'));
 const LecturerReportsPage = lazy(() => import('./pages/lecturer/LecturerReportsPage'));
 const ClassEvaluationPage = lazy(() => import('./pages/lecturer/ClassEvaluationPage'));
+const LecturerQuestionsPage = lazy(() => import('./pages/lecturer/LecturerQuestionsPage'));
 const AdminClassEvaluationsPage = lazy(() => import('./pages/admin/ClassEvaluationsPage'));
 
 const resourcePage = (name) => lazy(() =>
@@ -108,6 +109,7 @@ export default function App() {
               <Route path="/lecturer" element={<LecturerDashboard />} />
               <Route path="/lecturer/summary" element={<LecturerSummaryPage />} />
               <Route path="/lecturer/class-evaluation" element={<ClassEvaluationPage />} />
+              <Route path="/lecturer/questions" element={<LecturerQuestionsPage />} />
               <Route path="/lecturer/reports" element={<LecturerReportsPage />} />
               <Route path="/lecturer/profile" element={<ProfilePage />} />
             </Route>

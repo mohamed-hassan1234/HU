@@ -7,6 +7,7 @@ const logActivity = require('../utils/logActivity');
 
 const router = express.Router();
 const questionManagers = [protect, authorize('admin', 'registration')];
+const questionAuthors = [protect, authorize('admin', 'registration', 'lecturer')];
 
 const columns = [
   { header: 'question_id', key: 'questionId' },
@@ -28,36 +29,83 @@ const toQuestion = (body) => ({
   status: body.status || 'active'
 });
 
+const generateQuestionId = (lecturerId) => `LQ-${lecturerId}-${Date.now()}`;
+
 router.get('/', protect, async (req, res) => {
-  const { search = '', category, activeOnly = 'false' } = req.query;
+  const { search = '', category, activeOnly = 'false', mine, lecturerId, courseCode } = req.query;
   const query = {};
   if (search) query.questionText = new RegExp(search, 'i');
   if (category) query.category = category;
   if (activeOnly === 'true') query.status = 'active';
+
+  if (mine === 'true') {
+    if (req.user.role !== 'lecturer') return res.status(403).json({ message: 'Only lecturers can view their own questions' });
+    query.scope = 'lecturer';
+    query.lecturerId = req.user.loginId;
+  } else if (lecturerId) {
+    query.$or = [
+      { scope: 'global' },
+      { scope: 'lecturer', lecturerId, ...(courseCode ? { $or: [{ courseCode: { $in: ['', null] } }, { courseCode }] } : {}) }
+    ];
+  } else {
+    query.scope = 'global';
+  }
+
   const data = await EvaluationQuestion.find(query).sort({ category: 1, order: 1 });
   res.json({ data });
 });
 
-router.post('/', questionManagers, async (req, res) => {
-  const question = await EvaluationQuestion.create(toQuestion(req.body));
+router.post('/', questionAuthors, async (req, res) => {
+  const payload = toQuestion(req.body);
+  if (req.user.role === 'lecturer') {
+    payload.scope = 'lecturer';
+    payload.lecturerId = req.user.loginId;
+    payload.courseCode = req.body.courseCode || '';
+    if (!payload.questionId) payload.questionId = generateQuestionId(req.user.loginId);
+  } else {
+    payload.scope = 'global';
+    payload.lecturerId = undefined;
+    payload.courseCode = undefined;
+  }
+  const question = await EvaluationQuestion.create(payload);
   await logActivity(req, 'create', 'question', question.questionId);
   res.status(201).json(question);
 });
 
-router.put('/:id', questionManagers, async (req, res) => {
-  const question = await EvaluationQuestion.findByIdAndUpdate(req.params.id, toQuestion(req.body), {
+router.put('/:id', questionAuthors, async (req, res) => {
+  const existing = await EvaluationQuestion.findById(req.params.id);
+  if (!existing) return res.status(404).json({ message: 'Question not found' });
+  if (req.user.role === 'lecturer' && (existing.scope !== 'lecturer' || existing.lecturerId !== req.user.loginId)) {
+    return res.status(403).json({ message: 'You can only edit your own questions' });
+  }
+
+  const payload = toQuestion(req.body);
+  if (req.user.role === 'lecturer') {
+    payload.scope = 'lecturer';
+    payload.lecturerId = req.user.loginId;
+    payload.courseCode = req.body.courseCode || '';
+  } else {
+    payload.scope = existing.scope;
+    payload.lecturerId = existing.lecturerId;
+    payload.courseCode = existing.courseCode;
+  }
+
+  const question = await EvaluationQuestion.findByIdAndUpdate(req.params.id, payload, {
     new: true,
     runValidators: true
   });
-  if (!question) return res.status(404).json({ message: 'Question not found' });
   await logActivity(req, 'update', 'question', question.questionId);
   res.json(question);
 });
 
-router.delete('/:id', questionManagers, async (req, res) => {
-  const question = await EvaluationQuestion.findByIdAndDelete(req.params.id);
-  if (!question) return res.status(404).json({ message: 'Question not found' });
-  await logActivity(req, 'delete', 'question', question.questionId);
+router.delete('/:id', questionAuthors, async (req, res) => {
+  const existing = await EvaluationQuestion.findById(req.params.id);
+  if (!existing) return res.status(404).json({ message: 'Question not found' });
+  if (req.user.role === 'lecturer' && (existing.scope !== 'lecturer' || existing.lecturerId !== req.user.loginId)) {
+    return res.status(403).json({ message: 'You can only delete your own questions' });
+  }
+  await EvaluationQuestion.findByIdAndDelete(req.params.id);
+  await logActivity(req, 'delete', 'question', existing.questionId);
   res.json({ message: 'Question deleted' });
 });
 
@@ -79,7 +127,7 @@ router.post('/import-csv', questionManagers, upload.single('file'), async (req, 
 });
 
 router.get('/export-csv', questionManagers, async (req, res) => {
-  sendCsv(res, 'evaluation_questions.csv', await EvaluationQuestion.find().lean(), columns);
+  sendCsv(res, 'evaluation_questions.csv', await EvaluationQuestion.find({ scope: 'global' }).lean(), columns);
 });
 
 module.exports = router;

@@ -38,15 +38,10 @@ export default function EvaluationFormPage() {
   const [completed, setCompleted] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.get('/student/my-courses'), api.get('/questions', { params: { activeOnly: true } })])
-      .then(([coursesRes, questionsRes]) => {
+    api.get('/student/my-courses')
+      .then((coursesRes) => {
         const courseRows = coursesRes.data || [];
-        const active = (questionsRes.data.data || [])
-          .filter((q) => allowedCategories.includes(q.category))
-          .sort((a, b) => (a.order || 0) - (b.order || 0));
         setCourses(courseRows);
-        setQuestions(active);
-        setResponses({});
         const current = courseRows.find((item) => item.courseCode === decodeURIComponent(courseCode || '')) || courseRows.find((item) => !item.evaluated);
         if (current) setSelectedAssignmentId(current.assignmentId);
       })
@@ -57,6 +52,23 @@ export default function EvaluationFormPage() {
     () => courses.find((item) => item.assignmentId === selectedAssignmentId),
     [courses, selectedAssignmentId]
   );
+
+  useEffect(() => {
+    if (!selectedCourse?.lecturerId) {
+      setQuestions([]);
+      return;
+    }
+    api.get('/questions', {
+      params: { activeOnly: true, lecturerId: selectedCourse.lecturerId, courseCode: selectedCourse.courseCode }
+    }).then((questionsRes) => {
+      const active = (questionsRes.data.data || [])
+        .filter((q) => q.scope === 'lecturer' || allowedCategories.includes(q.category))
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      setQuestions(active);
+      setResponses({});
+      setQuestionIndex(0);
+    }).catch((error) => toast.fire({ icon: 'error', title: error.response?.data?.message || 'Unable to load evaluation questions' }));
+  }, [selectedCourse?.lecturerId, selectedCourse?.courseCode]);
 
   if (selectedCourse?.evaluated) return <Navigate to="/student/courses" replace />;
 

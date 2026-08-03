@@ -73,6 +73,7 @@ const lecturerLinks = [
   { section: 'Overview', label: 'Dashboard', to: '/lecturer', icon: Gauge },
   { section: 'Evaluation', label: 'My Evaluation Summary', to: '/lecturer/summary', icon: BarChart3 },
   { section: 'Evaluation', label: 'Evaluate My Classes', to: '/lecturer/class-evaluation', icon: ClipboardPenLine },
+  { section: 'Evaluation', label: 'My Evaluation Questions', to: '/lecturer/questions', icon: HelpCircle },
   { section: 'Evaluation', label: 'Course Reports', to: '/lecturer/reports', icon: FileText },
   { section: 'Account', label: 'Profile', to: '/lecturer/profile', icon: UserRound }
 ];
