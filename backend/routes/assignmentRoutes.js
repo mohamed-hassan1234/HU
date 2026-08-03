@@ -167,10 +167,14 @@ const resolveImportedClass = (classes, value, semester, academicYear) => {
     const firstPart = input.split('/')[0]?.trim();
     matches = classes.filter((classItem) => normalizeLookup(classItem.className) === normalizeLookup(firstPart));
   }
-  if (semester) matches = matches.filter((classItem) => normalizeLookup(classItem.semester) === normalizeLookup(semester));
-  if (academicYear) matches = matches.filter((classItem) => normalizeLookup(classItem.academicYear) === normalizeLookup(academicYear));
+  if (!matches.length) return { error: `The class "${input}" does not exist.` };
+  if (matches.length > 1) {
+    let refined = matches;
+    if (semester) refined = refined.filter((classItem) => normalizeLookup(classItem.semester) === normalizeLookup(semester));
+    if (academicYear) refined = refined.filter((classItem) => normalizeLookup(classItem.academicYear) === normalizeLookup(academicYear));
+    if (refined.length) matches = refined;
+  }
   const unique = [...new Map(matches.map((item) => [String(item._id), item])).values()];
-  if (!unique.length) return { error: `The class "${input}" does not exist.` };
   if (unique.length > 1) return { error: `More than one class matched "${input}". Use the full class label with semester and academic year.` };
   return { classItem: unique[0] };
 };
