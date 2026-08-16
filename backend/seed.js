@@ -13,12 +13,17 @@ const ActivityLog = require('./models/ActivityLog');
 const Faculty = require('./models/Faculty');
 const Department = require('./models/Department');
 const ClassGroup = require('./models/Class');
+const AcademicYear = require('./models/AcademicYear');
+const AcademicTerm = require('./models/AcademicTerm');
+const StudentClassMembership = require('./models/StudentClassMembership');
+const ClassPromotion = require('./models/ClassPromotion');
+const EvaluationCampaign = require('./models/EvaluationCampaign');
 
 const faculty = 'Faculty of Information Technology';
 const department = 'Information Technology';
 const className = 'BIT-4A';
-const semester = 'Semester 2 - 2024/2025';
-const academicYear = '2024/2025';
+const semester = 'Semester 2';
+const academicYear = '2025/2026';
 
 const lecturers = [
   ['2020', 'Abdirahman Ali Haji'],
@@ -134,12 +139,23 @@ const questions = [
 ];
 
 const run = async () => {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Database seeding is disabled in production');
+  }
+  if (process.env.ALLOW_DATABASE_RESET !== 'true') {
+    throw new Error('Seed resets all application data. Set ALLOW_DATABASE_RESET=true to confirm this development-only reset.');
+  }
   await connectDB();
   await Promise.all([
     User.deleteMany({}),
     Faculty.deleteMany({}),
     Department.deleteMany({}),
     ClassGroup.deleteMany({}),
+    AcademicYear.deleteMany({}),
+    AcademicTerm.deleteMany({}),
+    StudentClassMembership.deleteMany({}),
+    ClassPromotion.deleteMany({}),
+    EvaluationCampaign.deleteMany({}),
     Student.deleteMany({}),
     Lecturer.deleteMany({}),
     Course.deleteMany({}),
@@ -160,14 +176,46 @@ const run = async () => {
     code: 'IT',
     faculty: computingFaculty._id,
     facultyName: computingFaculty.name,
+    totalSemesters: 8,
+    status: 'active'
+  });
+  const seededAcademicYear = await AcademicYear.create({
+    name: academicYear,
+    startDate: new Date('2025-09-01T00:00:00.000Z'),
+    endDate: new Date('2026-08-31T23:59:59.999Z'),
+    status: 'active'
+  });
+  await AcademicTerm.create({
+    academicYear: seededAcademicYear._id,
+    academicYearName: seededAcademicYear.name,
+    termNumber: 1,
+    name: 'Term 1',
+    startDate: new Date('2025-09-01T00:00:00.000Z'),
+    endDate: new Date('2026-01-31T23:59:59.999Z'),
+    status: 'closed'
+  });
+  const seededTerm = await AcademicTerm.create({
+    academicYear: seededAcademicYear._id,
+    academicYearName: seededAcademicYear.name,
+    termNumber: 2,
+    name: 'Term 2',
+    startDate: new Date('2026-02-01T00:00:00.000Z'),
+    endDate: new Date('2026-08-31T23:59:59.999Z'),
     status: 'active'
   });
   const bitClass = await ClassGroup.create({
+    classCode: 'BIT-4A',
     className,
+    description: 'Bachelor of Information Technology cohort A',
     faculty: computingFaculty._id,
     facultyName: computingFaculty.name,
     department: itDepartment._id,
     departmentName: itDepartment.name,
+    currentAcademicYear: seededAcademicYear._id,
+    currentAcademicYearName: seededAcademicYear.name,
+    currentTerm: seededTerm._id,
+    currentTermNumber: 2,
+    currentSemester: 2,
     semester,
     academicYear,
     status: 'active'
@@ -182,7 +230,9 @@ const run = async () => {
     role: 'registration',
     facultyId: computingFaculty._id,
     faculty: computingFaculty.name,
-    permissions: ['students.manage', 'lecturers.manage', 'assignments.manage', 'questions.manage', 'reports.faculty'],
+    departmentId: itDepartment._id,
+    department: itDepartment.name,
+    permissions: ['students.manage', 'lecturers.manage', 'assignments.manage', 'questions.manage', 'reports.department'],
     status: 'active'
   });
   await User.create({
@@ -226,11 +276,18 @@ const run = async () => {
     department,
     departmentId: itDepartment._id
   })));
-  await Student.insertMany(students.map((student) => ({
+  const seededStudents = await Student.insertMany(students.map((student) => ({
     ...student,
     facultyId: computingFaculty._id,
     departmentId: itDepartment._id,
     classId: bitClass._id
+  })));
+  await StudentClassMembership.insertMany(seededStudents.map((student) => ({
+    student: student._id, studentId: student.studentId, class: bitClass._id,
+    classCode: bitClass.classCode, className: bitClass.className,
+    academicYear: seededAcademicYear._id, academicYearName: seededAcademicYear.name,
+    term: seededTerm._id, termNumber: seededTerm.termNumber,
+    semester: bitClass.currentSemester, status: 'active', reason: 'Seed registration'
   })));
   for (const student of students) {
     await User.create({
@@ -261,6 +318,9 @@ const run = async () => {
         classId: bitClass._id,
         semester,
         academicYear,
+        academicYearId: seededAcademicYear._id,
+        termId: seededTerm._id,
+        termNumber: seededTerm.termNumber,
         lecturerId: lecturer.lecturerId,
         lecturerName: lecturer.fullName,
         status: 'active'

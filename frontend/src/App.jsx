@@ -14,6 +14,9 @@ const RegistrationDashboard = lazy(() => import('./pages/registration/Registrati
 const FacultyManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.FacultyManagementPage })));
 const DepartmentManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.DepartmentManagementPage })));
 const ClassManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.ClassManagementPage })));
+const AcademicYearManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.AcademicYearManagementPage })));
+const AcademicTermManagementPage = lazy(() => import('./pages/admin/MasterDataPages').then((module) => ({ default: module.AcademicTermManagementPage })));
+const AcademicOperationsPage = lazy(() => import('./pages/admin/AcademicOperationsPage'));
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
 const MyCoursesPage = lazy(() => import('./pages/student/MyCoursesPage'));
 const EvaluationFormPage = lazy(() => import('./pages/student/EvaluationFormPage'));
@@ -76,6 +79,9 @@ export default function App() {
               <Route path="/admin/faculties" element={<FacultyManagementPage />} />
               <Route path="/admin/departments" element={<DepartmentManagementPage />} />
               <Route path="/admin/classes" element={<ClassManagementPage />} />
+              <Route path="/admin/academic-years" element={<AcademicYearManagementPage />} />
+              <Route path="/admin/academic-terms" element={<AcademicTermManagementPage />} />
+              <Route path="/admin/academic-operations" element={<AcademicOperationsPage />} />
               <Route path="/admin/questions" element={<QuestionsPage />} />
               <Route path="/admin/teacher-questions" element={<TeacherQuestionsPage />} />
             </Route>

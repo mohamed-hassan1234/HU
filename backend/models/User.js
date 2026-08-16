@@ -17,6 +17,8 @@ const userSchema = new mongoose.Schema(
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
     department: { type: String, trim: true },
     permissions: [{ type: String, trim: true }],
+    mustChangePassword: { type: Boolean, default: false },
+    tokenVersion: { type: Number, default: 0, select: false },
     lastLogin: Date,
     status: { type: String, enum: ['active', 'inactive'], default: 'active' }
   },

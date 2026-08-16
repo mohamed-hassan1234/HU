@@ -6,6 +6,7 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv, parseOptions } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
+const { sendOperationalError } = require('../utils/httpError');
 
 const router = express.Router();
 const adminOnly = [protect, authorize('admin')];
@@ -17,6 +18,7 @@ const columns = [
   { header: 'email', key: 'email' },
   { header: 'role', key: 'role' },
   { header: 'faculty', key: 'faculty' },
+  { header: 'department', key: 'department' },
   { header: 'status', key: 'status' },
   { header: 'last_login', key: 'lastLogin' },
   { header: 'created_date', key: 'createdAt' }
@@ -40,6 +42,9 @@ const resolveScope = async (body) => {
   const department = departmentQuery ? await Department.findOne(departmentQuery).lean() : null;
   if (body.facultyId && !faculty) throw Object.assign(new Error('Selected faculty was not found'), { statusCode: 400 });
   if (body.departmentId && !department) throw Object.assign(new Error('Selected department was not found'), { statusCode: 400 });
+  if (faculty && department && String(department.faculty) !== String(faculty._id)) {
+    throw Object.assign(new Error('Selected department does not belong to the selected faculty'), { statusCode: 400 });
+  }
   return {
     facultyId: faculty?._id || department?.faculty || undefined,
     faculty: faculty?.name || department?.facultyName || body.faculty || '',
@@ -55,10 +60,10 @@ const toUser = async (body, existing = null) => {
   if (role === 'dean' && !scope.facultyId) {
     throw Object.assign(new Error('Faculty is required for dean accounts'), { statusCode: 400 });
   }
-  if (role === 'registration' && !scope.facultyId) {
-    throw Object.assign(new Error('Faculty is required for registration accounts'), { statusCode: 400 });
+  if (role === 'registration' && !scope.departmentId) {
+    throw Object.assign(new Error('Department is required for registration accounts'), { statusCode: 400 });
   }
-  if (['dean', 'registration'].includes(role)) {
+  if (role === 'dean') {
     scope.departmentId = undefined;
     scope.department = '';
   }
@@ -86,7 +91,7 @@ const sanitize = (user) => {
 };
 
 const sendError = (res, error) => {
-  res.status(error.statusCode || 500).json({ message: error.message });
+  sendOperationalError(res, error);
 };
 
 router.get('/roles', adminOnly, (req, res) => {
@@ -121,7 +126,7 @@ router.post('/', adminOnly, async (req, res) => {
     if (!payload.loginId || !payload.password) {
       return res.status(400).json({ message: 'Username and password are required' });
     }
-    const user = await User.create(payload);
+    const user = await User.create({ ...payload, mustChangePassword: true });
     await logActivity(req, 'create', 'user', user.loginId, { role: user.role });
     res.status(201).json(sanitize(user));
   } catch (error) {
@@ -131,10 +136,14 @@ router.post('/', adminOnly, async (req, res) => {
 
 router.put('/:id', adminOnly, async (req, res) => {
   try {
-    const existing = await User.findById(req.params.id);
+    const existing = await User.findById(req.params.id).select('+tokenVersion');
     if (!existing) return res.status(404).json({ message: 'User not found' });
     ensureManagedUser(existing);
     const payload = await toUser(req.body, existing);
+    if (payload.password) {
+      existing.mustChangePassword = true;
+      existing.tokenVersion = Number(existing.tokenVersion || 0) + 1;
+    }
     if (!payload.password) delete payload.password;
     Object.assign(existing, payload);
     await existing.save();
@@ -178,10 +187,12 @@ router.patch('/:id/status', adminOnly, async (req, res) => {
 router.patch('/:id/reset-password', adminOnly, async (req, res) => {
   try {
     const password = req.body.password || '12345678@HU';
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).select('+tokenVersion');
     if (!user) return res.status(404).json({ message: 'User not found' });
     ensureManagedUser(user);
     user.password = password;
+    user.mustChangePassword = true;
+    user.tokenVersion = Number(user.tokenVersion || 0) + 1;
     await user.save();
     await logActivity(req, 'reset_password', 'user', user.loginId);
     res.json({ message: 'Password reset successfully' });
@@ -207,13 +218,15 @@ router.post('/import-csv', adminOnly, upload.single('file'), async (req, res) =>
         permissions: row.permissions
       });
       if (!payload.loginId) continue;
-      const user = await User.findOne({ loginId: payload.loginId });
+      const user = await User.findOne({ loginId: payload.loginId }).select('+tokenVersion');
       if (user) {
         ensureManagedUser(user);
         Object.assign(user, payload);
+        user.mustChangePassword = true;
+        user.tokenVersion = Number(user.tokenVersion || 0) + 1;
         await user.save();
       } else {
-        await User.create(payload);
+        await User.create({ ...payload, mustChangePassword: true });
       }
       imported += 1;
     }

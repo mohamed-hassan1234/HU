@@ -5,8 +5,8 @@ const ClassGroup = require('../models/Class');
 
 const ADMIN_ROLE = 'admin';
 const REGISTRATION_ROLE = 'registration';
-const FACULTY_SCOPED_ROLES = ['dean', 'registration'];
-const DEPARTMENT_SCOPED_ROLES = [];
+const FACULTY_SCOPED_ROLES = ['dean'];
+const DEPARTMENT_SCOPED_ROLES = ['registration'];
 const ACADEMIC_MANAGER_ROLES = ['admin', 'registration'];
 const REPORTING_ROLES = ['admin', 'registration', 'dean', 'lecturer'];
 

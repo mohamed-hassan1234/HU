@@ -47,12 +47,14 @@ export function DepartmentManagementPage() {
         { name: 'code', label: 'Code' },
         { name: 'faculty', label: 'Faculty', type: 'select', required: true, options: faculties.map((item) => ({ value: item._id, label: item.name })) },
         { name: 'description', label: 'Description' },
+        { name: 'totalSemesters', label: 'Total Program Semesters', required: true },
         { name: 'status', label: 'Status', type: 'select', options: statusOptions }
       ]}
       columns={[
         ['name', 'Department'],
         ['facultyName', 'Faculty'],
         ['code', 'Code'],
+        ['totalSemesters', 'Semesters'],
         ['status', 'Status']
       ]}
       rowToForm={(row) => ({ ...row, faculty: row.faculty || row.facultyId })}
@@ -63,41 +65,71 @@ export function DepartmentManagementPage() {
 export function ClassManagementPage() {
   const [faculties, setFaculties] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [academicYears, setAcademicYears] = useState([]);
+  const [academicTerms, setAcademicTerms] = useState([]);
   useEffect(() => {
-    Promise.all([api.get('/faculties'), api.get('/departments')])
-      .then(([facultyRes, departmentRes]) => {
+    Promise.all([api.get('/faculties'), api.get('/departments'), api.get('/academic-years'), api.get('/academic-terms')])
+      .then(([facultyRes, departmentRes, yearRes, termRes]) => {
         setFaculties(facultyRes.data.data || []);
         setDepartments(departmentRes.data.data || []);
+        setAcademicYears(yearRes.data.data || []);
+        setAcademicTerms(termRes.data.data || []);
       });
   }, []);
   return (
     <MasterDataPage
       title="Classes"
-      subtitle="Classes are attached to a faculty, department, semester, and academic year."
+      subtitle="Create each permanent class once and track its current program semester on the shared calendar."
       endpoint="/classes"
-      blank={{ className: '', faculty: '', department: '', academicYear: '', semester: '', status: 'active' }}
+      statusAction={false}
+      blank={{ classCode: '', className: '', description: '', faculty: '', department: '', currentAcademicYear: '', currentTerm: '', currentSemester: '', status: 'active' }}
       fields={[
+        { name: 'classCode', label: 'Class Code', required: true },
         { name: 'className', label: 'Class Name', required: true },
+        { name: 'description', label: 'Description' },
         { name: 'faculty', label: 'Faculty', type: 'select', required: true, options: faculties.map((item) => ({ value: item._id, label: item.name })) },
         { name: 'department', label: 'Department', type: 'select', required: true, dependsOn: 'faculty', options: departments.map((item) => ({ value: item._id, label: item.name, faculty: String(item.faculty) })) },
-        { name: 'academicYear', label: 'Academic Year', required: true },
-        { name: 'semester', label: 'Semester', required: true },
-        { name: 'status', label: 'Status', type: 'select', options: statusOptions }
+        { name: 'currentAcademicYear', label: 'Academic Year', type: 'select', required: true, options: academicYears.map((item) => ({ value: item._id, label: `${item.name} (${item.status})` })) },
+        { name: 'currentTerm', label: 'Term', type: 'select', required: true, dependsOn: 'currentAcademicYear', options: academicTerms.map((item) => ({ value: item._id, label: `${item.name} (${item.status})`, currentAcademicYear: String(item.academicYear) })) },
+        { name: 'currentSemester', label: 'Program Semester', required: true },
+        { name: 'status', label: 'Status', type: 'select', options: ['planned', 'active', 'suspended', 'archived'] }
       ]}
       columns={[
+        ['classCode', 'Code'],
         ['className', 'Class'],
         ['facultyName', 'Faculty'],
         ['departmentName', 'Department'],
-        ['academicYear', 'Academic Year'],
-        ['semester', 'Semester'],
+        ['currentAcademicYearName', 'Academic Year'],
+        ['currentTermNumber', 'Term'],
+        ['currentSemester', 'Semester'],
         ['status', 'Status']
       ]}
-      rowToForm={(row) => ({ ...row, faculty: row.faculty, department: row.department })}
+      rowToForm={(row) => ({ ...row, faculty: row.faculty, department: row.department, currentAcademicYear: row.currentAcademicYear, currentTerm: row.currentTerm })}
     />
   );
 }
 
-function MasterDataPage({ title, subtitle, endpoint, blank, fields, columns, rowToForm = (row) => row }) {
+export function AcademicYearManagementPage() {
+  return <MasterDataPage title="Academic Years" subtitle="Manage the shared university academic calendar." endpoint="/academic-years" lifecycle blank={{ name: '', startDate: '', endDate: '' }} fields={[
+    { name: 'name', label: 'Academic Year (YYYY/YYYY)', required: true },
+    { name: 'startDate', label: 'Start Date', required: true },
+    { name: 'endDate', label: 'End Date', required: true }
+  ]} columns={[["name", "Academic Year"], ["startDate", "Start Date"], ["endDate", "End Date"], ["status", "Status"]]} rowToForm={(row) => ({ ...row, startDate: String(row.startDate || '').slice(0, 10), endDate: String(row.endDate || '').slice(0, 10) })} />;
+}
+
+export function AcademicTermManagementPage() {
+  const [years, setYears] = useState([]);
+  useEffect(() => { api.get('/academic-years').then((res) => setYears(res.data.data || [])); }, []);
+  return <MasterDataPage title="Academic Terms" subtitle="Each academic year contains shared Term 1 and Term 2." endpoint="/academic-terms" lifecycle blank={{ academicYear: '', termNumber: '', name: '', startDate: '', endDate: '' }} fields={[
+    { name: 'academicYear', label: 'Academic Year', type: 'select', required: true, options: years.map((item) => ({ value: item._id, label: item.name })) },
+    { name: 'termNumber', label: 'Term Number', type: 'select', required: true, options: ['1', '2'] },
+    { name: 'name', label: 'Term Name', required: true },
+    { name: 'startDate', label: 'Start Date', required: true },
+    { name: 'endDate', label: 'End Date', required: true }
+  ]} columns={[["academicYearName", "Academic Year"], ["name", "Term"], ["termNumber", "Number"], ["startDate", "Start Date"], ["endDate", "End Date"], ["status", "Status"]]} rowToForm={(row) => ({ ...row, academicYear: row.academicYear, startDate: String(row.startDate || '').slice(0, 10), endDate: String(row.endDate || '').slice(0, 10) })} />;
+}
+
+function MasterDataPage({ title, subtitle, endpoint, blank, fields, columns, rowToForm = (row) => row, lifecycle = false, statusAction = true }) {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -171,6 +203,16 @@ function MasterDataPage({ title, subtitle, endpoint, blank, fields, columns, row
     }
   };
 
+  const setLifecycleStatus = async (row, status) => {
+    try {
+      await api.patch(`${endpoint}/${row._id}/status`, { status });
+      toast.fire({ icon: 'success', title: `Record ${status}` });
+      load();
+    } catch (error) {
+      toast.fire({ icon: 'error', title: error.response?.data?.message || 'Status update failed' });
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -205,7 +247,7 @@ function MasterDataPage({ title, subtitle, endpoint, blank, fields, columns, row
                     {columns.map(([key]) => <td key={key} className="whitespace-nowrap px-4 py-3">{row[key] || '-'}</td>)}
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       <button className="btn-secondary mr-2 px-3" onClick={() => openEdit(row)}><Pencil size={15} /></button>
-                      <button className="btn-secondary mr-2 px-3" onClick={() => toggleStatus(row)}>{row.status === 'active' ? <Power size={15} /> : <CheckCircle2 size={15} />}</button>
+                      {lifecycle ? <>{row.status === 'planned' ? <button className="btn-secondary mr-2 px-3" onClick={() => setLifecycleStatus(row, 'active')}>Activate</button> : null}{row.status !== 'closed' ? <button className="btn-secondary mr-2 px-3" onClick={() => setLifecycleStatus(row, 'closed')}>Close</button> : null}</> : statusAction ? <button className="btn-secondary mr-2 px-3" onClick={() => toggleStatus(row)}>{row.status === 'active' ? <Power size={15} /> : <CheckCircle2 size={15} />}</button> : null}
                       <button className="btn-danger px-3" onClick={() => remove(row)}><Trash2 size={15} /></button>
                     </td>
                   </tr>

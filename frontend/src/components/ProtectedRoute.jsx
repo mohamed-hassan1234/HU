@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { roleProfile, useAuth } from '../context/AuthContext';
 
 export default function ProtectedRoute({ roles }) {
   const { user, loading } = useAuth();
@@ -8,5 +8,9 @@ export default function ProtectedRoute({ roles }) {
   if (loading) return <div className="grid min-h-screen place-items-center text-huGreen">Loading CTES...</div>;
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/login" replace />;
+  const passwordRoute = roleProfile(user.role);
+  if (user.mustChangePassword && location.pathname !== passwordRoute) {
+    return <Navigate to={passwordRoute} replace />;
+  }
   return <Outlet />;
 }

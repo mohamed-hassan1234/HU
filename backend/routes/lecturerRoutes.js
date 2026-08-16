@@ -8,6 +8,7 @@ const Evaluation = require('../models/Evaluation');
 const Student = require('../models/Student');
 const CourseAssignment = require('../models/CourseAssignment');
 const TeacherComment = require('../models/TeacherComment');
+const EvaluationCampaign = require('../models/EvaluationCampaign');
 const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
@@ -25,7 +26,8 @@ const {
   writeSession
 } = require('../utils/bulkImport');
 const logActivity = require('../utils/logActivity');
-const { hydrateFacultyDepartment, scopedQuery, assertCanAccessFaculty, userFacultyId } = require('../utils/accessControl');
+const { sendOperationalError } = require('../utils/httpError');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
 
 const router = express.Router();
 const manageLecturers = [protect, authorize('admin', 'registration')];
@@ -65,13 +67,13 @@ const exportQuery = (req) => {
   const query = scopedQuery(req, {});
   if (search) query.$or = [{ lecturerId: new RegExp(search, 'i') }, { fullName: new RegExp(search, 'i') }];
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
-  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   if (['active', 'inactive'].includes(status)) query.status = status;
   return query;
 };
 
 const sendImportError = (res, error, fallback = 'Import failed') => {
-  res.status(error.statusCode || 500).json({ message: error.message || fallback });
+  sendOperationalError(res, error, fallback);
 };
 
 const buildLecturerMasterData = async () => {
@@ -108,6 +110,9 @@ const toLecturer = (body) => ({
   facultyId: body.facultyId || body.faculty_id,
   department: body.department,
   departmentId: body.departmentId || body.department_id,
+  teachingScope: body.teachingScope || body.teaching_scope || 'home_department',
+  allowedFaculties: body.allowedFaculties || body.allowed_faculties || [],
+  allowedDepartments: body.allowedDepartments || body.allowed_departments || [],
   position: body.position,
   employmentType: body.employmentType || body.employment_type,
   username: body.username,
@@ -119,18 +124,18 @@ const toLecturer = (body) => ({
 const hydrateLecturer = async (body, req) => {
   const base = toLecturer(body);
   if (!base.fullName) base.fullName = fullNameFromParts(base);
-  if (req?.user?.role === 'registration') base.facultyId = userFacultyId(req.user);
+  if (req?.user?.role === 'registration') base.departmentId = userDepartmentId(req.user);
   const hydrated = await hydrateFacultyDepartment({
     facultyId: base.facultyId,
     departmentId: base.departmentId,
     fallback: base
   });
-  if (req?.user?.role === 'registration') assertCanAccessFaculty(req, hydrated.facultyId);
+  if (req?.user?.role === 'registration') assertCanAccessDepartment(req, hydrated.departmentId);
   return { ...base, ...hydrated };
 };
 
 const upsertLecturerUser = async (lecturer, password) => {
-  const user = await User.findOne({ loginId: lecturer.lecturerId });
+  const user = await User.findOne({ loginId: lecturer.lecturerId }).select('+tokenVersion');
   if (user) {
     user.role = 'lecturer';
     user.status = lecturer.status;
@@ -141,6 +146,10 @@ const upsertLecturerUser = async (lecturer, password) => {
     user.department = lecturer.department;
     user.departmentId = lecturer.departmentId;
     if (password) user.password = password;
+    if (password) {
+      user.mustChangePassword = true;
+      user.tokenVersion = Number(user.tokenVersion || 0) + 1;
+    }
     await user.save();
   } else {
     await User.create({
@@ -153,7 +162,8 @@ const upsertLecturerUser = async (lecturer, password) => {
       facultyId: lecturer.facultyId,
       department: lecturer.department,
       departmentId: lecturer.departmentId,
-      status: lecturer.status
+      status: lecturer.status,
+      mustChangePassword: true
     });
   }
 };
@@ -212,7 +222,7 @@ router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req,
   const query = scopedQuery(req, {});
   if (search) query.$or = [{ lecturerId: new RegExp(search, 'i') }, { fullName: new RegExp(search, 'i') }];
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
-  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     Lecturer.find(query).sort({ fullName: 1 }).skip(skip).limit(Number(limit)),
@@ -222,6 +232,7 @@ router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req,
 });
 
 router.post('/', manageLecturers, async (req, res) => {
+  if (!req.body.password || req.body.password !== req.body.confirmPassword) return res.status(400).json({ message: 'Password and confirmation must match' });
   const payload = await hydrateLecturer(req.body, req);
   if (payload.password) payload.password = await bcrypt.hash(payload.password, 10);
   const lecturer = await Lecturer.create(payload);
@@ -233,7 +244,8 @@ router.post('/', manageLecturers, async (req, res) => {
 router.put('/:id', manageLecturers, async (req, res) => {
   const current = await Lecturer.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Lecturer not found' });
-  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
+  if (req.body.password && req.body.password !== req.body.confirmPassword) return res.status(400).json({ message: 'Password and confirmation must match' });
   const payload = await hydrateLecturer(req.body, req);
   if (!payload.password) delete payload.password;
   else payload.password = await bcrypt.hash(payload.password, 10);
@@ -250,7 +262,7 @@ router.put('/:id', manageLecturers, async (req, res) => {
 router.delete('/:id', manageLecturers, async (req, res) => {
   const current = await Lecturer.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Lecturer not found' });
-  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
   const lecturer = await Lecturer.findByIdAndDelete(req.params.id);
   if (!lecturer) return res.status(404).json({ message: 'Lecturer not found' });
   await User.deleteOne({ loginId: lecturer.lecturerId });
@@ -488,9 +500,13 @@ router.post('/me/comments', protect, authorize('lecturer'), async (req, res) => 
 
 router.get('/me/summary', protect, authorize('lecturer'), async (req, res) => {
   const lecturerId = req.user.loginId;
+  const publishedCampaigns = await EvaluationCampaign.find({ status: 'published' }).select('_id minimumResponses').lean();
+  const minimumByCampaign = new Map(publishedCampaigns.map((item) => [String(item._id), item.minimumResponses]));
+  const eligibleGroups = await Evaluation.aggregate([{ $match: { lecturerId, campaign: { $in: publishedCampaigns.map((item) => item._id) } } }, { $group: { _id: { campaign: '$campaign', assignmentId: '$assignmentId' }, count: { $sum: 1 } } }]);
+  const allowedAssignmentIds = eligibleGroups.filter((item) => item.count >= (minimumByCampaign.get(String(item._id.campaign)) || 5)).map((item) => item._id.assignmentId);
   const [evaluations, allEvaluations, assignments, comments, lecturers, allAssignments, allStudents] = await Promise.all([
-    Evaluation.find({ lecturerId }).lean(),
-    Evaluation.find().lean(),
+    Evaluation.find({ lecturerId, assignmentId: { $in: allowedAssignmentIds } }).lean(),
+    Evaluation.find({ campaign: { $in: publishedCampaigns.map((item) => item._id) } }).lean(),
     CourseAssignment.find({ lecturerId, status: { $ne: 'inactive' } }).lean(),
     TeacherComment.find({ lecturerId }).sort({ createdAt: -1 }).lean(),
     Lecturer.find({ status: 'active' }).lean(),

@@ -4,7 +4,7 @@ const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
-const { scopedQuery } = require('../utils/accessControl');
+const CourseAssignment = require('../models/CourseAssignment');
 
 const router = express.Router();
 const adminOnly = [protect, authorize('admin')];
@@ -25,10 +25,10 @@ const toCourse = (body) => ({
 
 router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req, res) => {
   const { search = '', page = 1, limit = 10, facultyId, departmentId, status } = req.query;
-  const query = scopedQuery(req, {});
+  const query = {};
   if (search) query.$or = [{ courseCode: new RegExp(search, 'i') }, { courseName: new RegExp(search, 'i') }];
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
-  if (departmentId && ['admin', 'registration', 'dean'].includes(req.user.role)) query.departmentId = departmentId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   if (['active', 'inactive'].includes(status)) query.status = status;
   const skip = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
@@ -52,6 +52,9 @@ router.put('/:id', adminOnly, async (req, res) => {
 });
 
 router.delete('/:id', adminOnly, async (req, res) => {
+  const current = await Course.findById(req.params.id);
+  if (!current) return res.status(404).json({ message: 'Course not found' });
+  if (await CourseAssignment.exists({ courseCode: current.courseCode })) return res.status(409).json({ message: 'Courses used in assignments cannot be deleted; set the course inactive instead' });
   const course = await Course.findByIdAndDelete(req.params.id);
   if (!course) return res.status(404).json({ message: 'Course not found' });
   await logActivity(req, 'delete', 'course', course.courseCode);
