@@ -11,6 +11,8 @@ export const roleHome = {
   dean: '/admin'
 };
 
+export const roleProfile = (role) => `${roleHome[role] || ''}/profile`;
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -37,13 +39,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const refreshSession = async () => {
+    const { data } = await api.get('/auth/me');
+    setUser(data.user);
+    setProfile(data.profile);
+    return data.user;
+  };
+
   const logout = () => {
     localStorage.removeItem('hucems_token');
     setUser(null);
     setProfile(null);
   };
 
-  const value = useMemo(() => ({ user, profile, loading, login, logout }), [user, profile, loading]);
+  const value = useMemo(() => ({ user, profile, loading, login, logout, refreshSession }), [user, profile, loading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

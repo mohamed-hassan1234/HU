@@ -134,7 +134,7 @@ router.get('/admin', protect, authorize('admin', 'registration', 'dean'), async 
     if (req.query[key]) filter[key] = req.query[key];
   });
   if (req.query.facultyId && req.user.role === 'admin') filter.facultyId = req.query.facultyId;
-  if (req.query.departmentId && ['admin', 'registration', 'dean'].includes(req.user.role)) filter.departmentId = req.query.departmentId;
+  if (req.query.departmentId && req.user.role === 'admin') filter.departmentId = req.query.departmentId;
   const data = await ClassEvaluation.find(filter).sort({ submittedAt: -1 }).lean();
   const classMap = new Map();
   data.forEach((item) => {

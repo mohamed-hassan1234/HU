@@ -19,7 +19,7 @@ import logo from '../../hormuud logo.png';
 const emptyPasswords = { currentPassword: '', newPassword: '', confirmPassword: '' };
 
 export default function ProfilePage() {
-  const { profile, user } = useAuth();
+  const { profile, user, refreshSession } = useAuth();
   const [passwords, setPasswords] = useState(emptyPasswords);
   const [visible, setVisible] = useState({ currentPassword: false, newPassword: false, confirmPassword: false });
   const [saving, setSaving] = useState(false);
@@ -42,6 +42,7 @@ export default function ProfilePage() {
     try {
       const { data } = await api.put('/auth/change-password', passwords);
       if (data.token) localStorage.setItem('hucems_token', data.token);
+      await refreshSession();
       setPasswords(emptyPasswords);
       toast.fire({ icon: 'success', title: 'Password updated successfully' });
     } catch (error) {
@@ -54,6 +55,12 @@ export default function ProfilePage() {
   return (
     <>
       <PageHeader title="My Profile" subtitle="View your official university information and manage your account password securely." />
+
+      {user?.mustChangePassword ? (
+        <div className="mb-5 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+          Your account is using a temporary password. Change it below before continuing to the rest of CTES.
+        </div>
+      ) : null}
 
       <section className="overflow-hidden rounded-lg bg-gradient-to-r from-huGreen to-huGreenDark text-white shadow-soft">
         <div className="relative flex flex-col gap-5 p-6 sm:flex-row sm:items-center">

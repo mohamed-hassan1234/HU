@@ -32,12 +32,17 @@ export const lecturersConfig = {
   fields: [
     { name: 'lecturerId', label: 'Lecturer ID' },
     { name: 'fullName', label: 'Full Name' },
+    { name: 'email', label: 'Email', type: 'email' },
+    { name: 'phoneNumber', label: 'Phone' },
     { name: 'password', label: 'Login Password', type: 'password' },
+    { name: 'confirmPassword', label: 'Confirm Password', type: 'password' },
+    { name: 'teachingScope', label: 'Teaching Scope', type: 'select', options: ['home_department', 'shared'], defaultValue: 'home_department' },
     { name: 'status', label: 'Status', type: 'select', options: statusOptions, defaultValue: 'active' }
   ],
   columns: [
     { key: 'lecturerId', label: 'Lecturer ID' },
     { key: 'fullName', label: 'Name' },
+    { key: 'teachingScope', label: 'Scope' },
     { key: 'status', label: 'Status' }
   ]
 };

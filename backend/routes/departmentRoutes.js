@@ -3,7 +3,8 @@ const Department = require('../models/Department');
 const Faculty = require('../models/Faculty');
 const { protect, authorize } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
-const { userFacultyId } = require('../utils/accessControl');
+const { sendOperationalError } = require('../utils/httpError');
+const { userFacultyId, userDepartmentId } = require('../utils/accessControl');
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ const toDepartment = async (body) => {
     faculty: faculty._id,
     facultyName: faculty.name,
     description: body.description || '',
+    totalSemesters: Number(body.totalSemesters || 8),
     status: body.status || 'active'
   };
 };
@@ -26,7 +28,7 @@ router.get('/', protect, authorize('admin', 'registration', 'dean'), async (req,
   if (req.query.status) query.status = req.query.status;
   if (req.query.search) query.name = new RegExp(req.query.search, 'i');
   if (req.user.role === 'dean' && userFacultyId(req.user)) query.faculty = userFacultyId(req.user);
-  if (req.user.role === 'registration' && userFacultyId(req.user)) query.faculty = userFacultyId(req.user);
+  if (req.user.role === 'registration' && userDepartmentId(req.user)) query._id = userDepartmentId(req.user);
   res.json({ data: await Department.find(query).sort({ facultyName: 1, name: 1 }).lean() });
 });
 
@@ -36,7 +38,7 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
     await logActivity(req, 'create', 'department', department._id.toString(), { name: department.name });
     res.status(201).json(department);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    sendOperationalError(res, error);
   }
 });
 
@@ -50,7 +52,7 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
     await logActivity(req, 'update', 'department', department._id.toString(), { name: department.name });
     res.json(department);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    sendOperationalError(res, error);
   }
 });
 

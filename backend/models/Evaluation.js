@@ -15,6 +15,7 @@ const evaluationSchema = new mongoose.Schema(
   {
     assignment: { type: mongoose.Schema.Types.ObjectId, ref: 'CourseAssignment', required: true },
     assignmentId: { type: String, required: true, trim: true },
+    campaign: { type: mongoose.Schema.Types.ObjectId, ref: 'EvaluationCampaign', required: true },
     studentId: { type: String, required: true, trim: true },
     courseCode: { type: String, required: true, trim: true },
     courseName: { type: String, required: true, trim: true },

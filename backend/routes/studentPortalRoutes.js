@@ -2,6 +2,8 @@ const express = require('express');
 const Evaluation = require('../models/Evaluation');
 const Student = require('../models/Student');
 const CourseAssignment = require('../models/CourseAssignment');
+const StudentClassMembership = require('../models/StudentClassMembership');
+const { activeCampaignForAssignment } = require('../utils/evaluationCampaign');
 const { protect, authorize } = require('../middleware/auth');
 const { createEvaluation } = require('./evaluationRoutes');
 
@@ -11,6 +13,8 @@ router.use(protect, authorize('student'));
 router.get('/my-courses', async (req, res) => {
   const student = await Student.findOne({ studentId: req.user.loginId });
   if (!student) return res.status(404).json({ message: 'Student profile not found' });
+  const membership = await StudentClassMembership.findOne({ student: student._id, status: 'active' }).lean();
+  if (!membership) return res.json([]);
   const classFilter = student.classId
     ? { classId: student.classId }
     : {
@@ -20,6 +24,8 @@ router.get('/my-courses', async (req, res) => {
   const [courses, evaluations] = await Promise.all([
     CourseAssignment.find({
       ...classFilter,
+      academicYearId: membership.academicYear,
+      termId: membership.term,
       $or: [
         { assignmentMode: { $ne: 'students' } },
         { assignedStudents: { $exists: false } },
@@ -31,13 +37,14 @@ router.get('/my-courses', async (req, res) => {
     Evaluation.find({ studentId: student.studentId })
   ]);
   const evaluated = new Set(evaluations.map((item) => item.assignmentId || String(item.assignment)));
-  res.json(
-    courses.map((course) => ({
+  res.json(await Promise.all(
+    courses.map(async (course) => ({
       ...course.toObject(),
+      evaluationOpen: Boolean(await activeCampaignForAssignment(course)),
       evaluated: evaluated.has(course.assignmentId) || evaluated.has(String(course._id)),
       studentStatus: evaluated.has(course.assignmentId) || evaluated.has(String(course._id)) ? 'Completed' : 'Pending'
     }))
-  );
+  ));
 });
 
 router.get('/evaluated-courses', async (req, res) => {

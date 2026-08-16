@@ -1,14 +1,26 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const { rateLimit } = require('express-rate-limit');
 const User = require('../models/User');
 const Student = require('../models/Student');
 const Lecturer = require('../models/Lecturer');
 const CourseAssignment = require('../models/CourseAssignment');
 const { protect } = require('../middleware/auth');
 const logActivity = require('../utils/logActivity');
+const { getJwtSecret, isProduction } = require('../config/security');
 
 const router = express.Router();
+const dummyPasswordHash = bcrypt.hashSync('invalid-login-password', 10);
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { message: 'Too many failed login attempts. Please try again in 15 minutes.' }
+});
 
 const asyncRoute = (handler) => (req, res, next) => {
   Promise.resolve(handler(req, res, next)).catch(next);
@@ -21,9 +33,9 @@ const requireDatabase = (req, res, next) => {
 
 const signToken = (user) =>
   jwt.sign(
-    { id: user._id, role: user.role, loginId: user.loginId },
-    process.env.JWT_SECRET || 'hucems_dev_secret',
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    { id: user._id, role: user.role, loginId: user.loginId, tokenVersion: user.tokenVersion || 0 },
+    getJwtSecret(),
+    { expiresIn: process.env.JWT_EXPIRES_IN || (isProduction() ? '1h' : '7d') }
   );
 
 const getProfile = async (user) => {
@@ -57,26 +69,32 @@ const getProfile = async (user) => {
   };
 };
 
-router.post('/login', requireDatabase, asyncRoute(async (req, res) => {
+router.post('/login', loginLimiter, requireDatabase, asyncRoute(async (req, res) => {
   const { loginId, password } = req.body;
   if (!loginId || !password) return res.status(400).json({ message: 'Login ID and password are required' });
 
-  const user = await User.findOne({ loginId: loginId.trim() });
-  if (!user || user.status !== 'active') return res.status(401).json({ message: 'Invalid credentials' });
-
-  const valid = await user.comparePassword(password);
-  if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
+  const normalizedLoginId = loginId.trim();
+  const user = await User.findOne({ loginId: normalizedLoginId }).select('+tokenVersion');
+  const valid = user ? await user.comparePassword(password) : await bcrypt.compare(password, dummyPasswordHash);
+  if (!user || user.status !== 'active' || !valid) {
+    await logActivity(req, 'login_failed', 'user_account', normalizedLoginId, { ip: req.ip });
+    return res.status(401).json({ message: 'Invalid credentials' });
+  }
 
   user.lastLogin = new Date();
   await user.save();
 
   const safeUser = user.toObject();
   delete safeUser.password;
+  delete safeUser.tokenVersion;
   res.json({ token: signToken(user), user: safeUser, profile: await getProfile(user) });
 }));
 
 router.get('/me', requireDatabase, protect, asyncRoute(async (req, res) => {
-  res.json({ user: req.user, profile: await getProfile(req.user) });
+  const safeUser = req.user.toObject();
+  delete safeUser.password;
+  delete safeUser.tokenVersion;
+  res.json({ user: safeUser, profile: await getProfile(req.user) });
 }));
 
 router.put('/change-password', requireDatabase, protect, asyncRoute(async (req, res) => {
@@ -97,11 +115,13 @@ router.put('/change-password', requireDatabase, protect, asyncRoute(async (req, 
     return res.status(400).json({ message: 'New password must be different from the current password' });
   }
 
-  const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user._id).select('+tokenVersion');
   if (!user || !(await user.comparePassword(currentPassword))) {
     return res.status(400).json({ message: 'Current password is incorrect' });
   }
   user.password = newPassword;
+  user.mustChangePassword = false;
+  user.tokenVersion = Number(user.tokenVersion || 0) + 1;
   await user.save();
   await logActivity(req, 'change_password', 'user_account', user._id.toString());
   res.json({ message: 'Password updated successfully', token: signToken(user) });

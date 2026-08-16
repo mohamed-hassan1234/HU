@@ -5,10 +5,14 @@ const CourseAssignment = require('../models/CourseAssignment');
 const Student = require('../models/Student');
 const Lecturer = require('../models/Lecturer');
 const Course = require('../models/Course');
+const StudentClassMembership = require('../models/StudentClassMembership');
+const { activeCampaignForAssignment } = require('../utils/evaluationCampaign');
+const EvaluationCampaign = require('../models/EvaluationCampaign');
 const { protect, authorize } = require('../middleware/auth');
 const { sendCsv } = require('../utils/csv');
 const logActivity = require('../utils/logActivity');
 const { scopedQuery } = require('../utils/accessControl');
+const { anonymousEvaluation, anonymousExportRow } = require('../utils/evaluationPrivacy');
 
 const router = express.Router();
 
@@ -25,12 +29,24 @@ const buildFilter = (query) => {
   ['assignmentId', 'faculty', 'facultyId', 'department', 'departmentId', 'courseCode', 'lecturerId', 'className', 'classId', 'semester', 'academicYear'].forEach((key) => {
     if (query[key]) filter[key] = query[key];
   });
+  if (query.allowedAssignmentIds) filter.assignmentId = { $in: query.allowedAssignmentIds };
   if (query.dateFrom || query.dateTo) {
     filter.submittedAt = {};
     if (query.dateFrom) filter.submittedAt.$gte = new Date(query.dateFrom);
     if (query.dateTo) filter.submittedAt.$lte = new Date(query.dateTo);
   }
   return filter;
+};
+
+const publishedAssignmentIdsForLecturer = async (lecturerId) => {
+  const campaigns = await EvaluationCampaign.find({ status: 'published' }).select('_id minimumResponses').lean();
+  if (!campaigns.length) return [];
+  const minimumByCampaign = new Map(campaigns.map((item) => [String(item._id), item.minimumResponses]));
+  const counts = await Evaluation.aggregate([
+    { $match: { lecturerId, campaign: { $in: campaigns.map((item) => item._id) } } },
+    { $group: { _id: { campaign: '$campaign', assignmentId: '$assignmentId' }, count: { $sum: 1 } } }
+  ]);
+  return counts.filter((item) => item.count >= (minimumByCampaign.get(String(item._id.campaign)) || 5)).map((item) => item._id.assignmentId);
 };
 
 const avg = (rows, key) => {
@@ -266,6 +282,9 @@ const createEvaluation = async (req, res) => {
   const studentId = req.user.role === 'student' ? req.user.loginId : req.body.studentId;
   const student = await Student.findOne({ studentId });
   if (!student) return res.status(404).json({ message: 'Student profile not found' });
+  if (student.status !== 'active') return res.status(403).json({ message: 'This student account is not active' });
+  const membership = await StudentClassMembership.findOne({ student: student._id, status: 'active' }).lean();
+  if (!membership) return res.status(409).json({ message: 'No active class registration exists for this term' });
   const classFilter = student.classId
     ? { classId: student.classId }
     : {
@@ -276,6 +295,8 @@ const createEvaluation = async (req, res) => {
   const assignment = await CourseAssignment.findOne({
     ...(req.body.assignmentId ? { assignmentId: req.body.assignmentId } : { courseCode: req.body.courseCode }),
     ...classFilter,
+    academicYearId: membership.academicYear,
+    termId: membership.term,
     $or: [
       { assignmentMode: { $ne: 'students' } },
       { assignedStudents: { $exists: false } },
@@ -285,6 +306,8 @@ const createEvaluation = async (req, res) => {
     status: { $ne: 'inactive' }
   });
   if (!assignment) return res.status(404).json({ message: 'Course assignment not found for this student' });
+  const campaign = await activeCampaignForAssignment(assignment);
+  if (!campaign) return res.status(409).json({ message: 'Evaluation is not currently open for this course' });
 
   const exists = await Evaluation.findOne({
     studentId,
@@ -295,6 +318,7 @@ const createEvaluation = async (req, res) => {
   const evaluation = await Evaluation.create({
     assignment: assignment._id,
     assignmentId: assignment.assignmentId,
+    campaign: campaign._id,
     studentId,
     courseCode: assignment.courseCode,
     courseName: assignment.courseName,
@@ -384,12 +408,8 @@ const buildParticipationData = async (req) => {
         studentId: student.studentId,
         studentName: student.fullName,
         status: evaluation ? 'evaluated' : 'not_evaluated',
-        submittedAt: evaluation?.submittedAt || null,
-        evaluationId: evaluation?._id || null,
-        courseScore: evaluation?.courseOverallRating || null,
-        lecturerScore: evaluation?.lecturerOverallRating || null,
-        attendanceRate: evaluation?.attendanceRate || null,
-        recommendation: evaluation?.recommendation || null
+        // Do not attach feedback or timestamps that could correlate participation
+        // records with an anonymous submission.
       });
     });
   });
@@ -425,7 +445,10 @@ const countBy = (rows, key) => Object.values(rows.reduce((map, item) => {
 
 const buildReportModel = async (req) => {
   const analyticsQuery = scopedQuery(req, req.query);
-  if (req.user.role === 'lecturer') analyticsQuery.lecturerId = req.user.loginId;
+  if (req.user.role === 'lecturer') {
+    analyticsQuery.lecturerId = req.user.loginId;
+    analyticsQuery.allowedAssignmentIds = await publishedAssignmentIdsForLecturer(req.user.loginId);
+  }
   const filter = buildFilter(analyticsQuery);
   const [analytics, participation, evaluations] = await Promise.all([
     getAnalyticsData(analyticsQuery),
@@ -433,9 +456,9 @@ const buildReportModel = async (req) => {
     Evaluation.find(filter).lean()
   ]);
   const evaluatedRows = participation.allRows.filter((row) => row.status === 'evaluated');
-  const recommendationRows = evaluatedRows.filter((row) => row.recommendation);
+  const recommendationRows = evaluations.filter((row) => row.recommendation);
   const yesRecommendations = recommendationRows.filter((row) => row.recommendation === 'Yes').length;
-  const attendanceRows = evaluatedRows.filter((row) => row.attendanceRate);
+  const attendanceRows = evaluations.filter((row) => row.attendanceRate);
   const attendanceRate = attendanceRows.length
     ? Number((attendanceRows.reduce((sum, row) => sum + attendanceValue(row.attendanceRate), 0) / attendanceRows.length).toFixed(1))
     : 0;
@@ -482,9 +505,9 @@ const buildReportModel = async (req) => {
       worstCourse: report.worstCourse ? { name: report.worstCourse.course, average: report.worstCourse.averageScore, rank: report.worstCourse.rank } : null,
       attendanceRate,
       recommendationRate,
-      recommendationBreakdown: countBy(evaluatedRows, 'recommendation'),
-      attendanceBreakdown: countBy(evaluatedRows, 'attendanceRate'),
-      evaluationTrend: countBy(evaluatedRows.map((row) => ({ submittedDate: row.submittedAt ? new Date(row.submittedAt).toLocaleDateString() : 'No date' })), 'submittedDate'),
+      recommendationBreakdown: countBy(evaluations, 'recommendation'),
+      attendanceBreakdown: countBy(evaluations, 'attendanceRate'),
+      evaluationTrend: countBy(evaluations.map((row) => ({ submittedDate: row.submittedAt ? new Date(row.submittedAt).toLocaleDateString() : 'No date' })), 'submittedDate'),
       radar: [
         { metric: 'Participation', value: participation.totals.participationRate || 0 },
         { metric: 'Attendance', value: attendanceRate },
@@ -497,17 +520,16 @@ const buildReportModel = async (req) => {
 };
 
 router.get('/', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
-  const filter = buildFilter(scopedQuery(req, req.query));
+  const query = scopedQuery(req, req.query);
+  if (req.user.role === 'lecturer') query.allowedAssignmentIds = await publishedAssignmentIdsForLecturer(req.user.loginId);
+  const filter = buildFilter(query);
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
   const evaluations = await Evaluation.find(filter).sort({ submittedAt: -1 }).lean();
   const studentIds = evaluations.map((item) => item.studentId);
   const students = await Student.find({ studentId: { $in: studentIds } }).lean();
   const studentMap = Object.fromEntries(students.map((student) => [student.studentId, student]));
   res.json({
-    data: evaluations.map((item) => ({
-      ...item,
-      studentName: item.anonymous ? 'Anonymous' : studentMap[item.studentId]?.fullName || item.studentId
-    }))
+    data: evaluations.map((item) => anonymousEvaluation(item, studentMap[item.studentId]?.fullName))
   });
 });
 
@@ -525,7 +547,8 @@ router.get('/student/:studentId', protect, authorize('admin', 'registration', 'd
     if (scoped.departmentId && String(student.departmentId) !== String(scoped.departmentId)) return res.status(403).json({ message: 'Forbidden' });
   }
   const filter = buildFilter(scopedQuery(req, req.query));
-  const data = await Evaluation.find({ ...filter, studentId: req.params.studentId }).sort({ submittedAt: -1 }).lean();
+  const identityFilter = req.user.role === 'student' ? {} : { anonymous: false };
+  const data = await Evaluation.find({ ...filter, ...identityFilter, studentId: req.params.studentId }).sort({ submittedAt: -1 }).lean();
   res.json({ student, data });
 });
 
@@ -548,14 +571,16 @@ router.get('/report-model', protect, authorize('admin', 'registration', 'dean', 
 
 router.get('/analytics', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
   const scoped = scopedQuery(req, req.query);
-  if (req.user.role === 'lecturer') scoped.lecturerId = req.user.loginId;
+  if (req.user.role === 'lecturer') { scoped.lecturerId = req.user.loginId; scoped.allowedAssignmentIds = await publishedAssignmentIdsForLecturer(req.user.loginId); }
   res.json(await getAnalyticsData(scoped));
 });
 
 router.get('/export-csv', protect, authorize('admin', 'registration', 'dean', 'lecturer'), async (req, res) => {
-  const filter = buildFilter(scopedQuery(req, req.query));
+  const query = scopedQuery(req, req.query);
+  if (req.user.role === 'lecturer') query.allowedAssignmentIds = await publishedAssignmentIdsForLecturer(req.user.loginId);
+  const filter = buildFilter(query);
   if (req.user.role === 'lecturer') filter.lecturerId = req.user.loginId;
-  const rows = await Evaluation.find(filter).lean();
+  const rows = (await Evaluation.find(filter).lean()).map(anonymousExportRow);
   sendCsv(res, 'evaluations.csv', rows, [
     { header: 'assignment_id', key: 'assignmentId' },
     { header: 'student_id', key: 'studentId' },

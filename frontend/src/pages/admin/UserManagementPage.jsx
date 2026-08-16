@@ -13,6 +13,7 @@ const blankUser = {
   password: '',
   role: 'registration',
   facultyId: '',
+  departmentId: '',
   permissions: '',
   status: 'active'
 };
@@ -22,6 +23,7 @@ const roleOptions = ['registration', 'dean'];
 export default function UserManagementPage() {
   const [users, setUsers] = useState([]);
   const [faculties, setFaculties] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [filters, setFilters] = useState({ search: '', role: '', status: '', facultyId: '' });
   const [form, setForm] = useState(blankUser);
   const [editing, setEditing] = useState(null);
@@ -42,8 +44,9 @@ export default function UserManagementPage() {
   };
 
   useEffect(() => {
-    Promise.all([api.get('/faculties')]).then(([facultyRes]) => {
+    Promise.all([api.get('/faculties'), api.get('/departments')]).then(([facultyRes, departmentRes]) => {
       setFaculties(facultyRes.data.data || []);
+      setDepartments(departmentRes.data.data || []);
     });
     load();
   }, []);
@@ -63,6 +66,7 @@ export default function UserManagementPage() {
       password: '',
       role: user.role || 'registration',
       facultyId: user.facultyId || '',
+      departmentId: user.departmentId || '',
       permissions: (user.permissions || []).join('|'),
       status: user.status || 'active'
     });
@@ -73,7 +77,7 @@ export default function UserManagementPage() {
     event.preventDefault();
     const payload = {
       ...form,
-      departmentId: '',
+      departmentId: form.role === 'registration' ? form.departmentId : '',
       permissions: form.permissions.split('|').map((item) => item.trim()).filter(Boolean)
     };
     if (editing && !payload.password) delete payload.password;
@@ -166,7 +170,7 @@ export default function UserManagementPage() {
         {loading ? <p className="p-8 text-center text-sm text-slate-500">Loading users...</p> : !users.length ? <div className="p-4"><EmptyState /></div> : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600"><tr>{['Full Name', 'Username', 'Email', 'Role', 'Faculty', 'Status', 'Last Login', 'Created Date', 'Actions'].map((head) => <th key={head} className="whitespace-nowrap px-4 py-3 font-semibold">{head}</th>)}</tr></thead>
+              <thead className="bg-slate-50 text-left text-slate-600"><tr>{['Full Name', 'Username', 'Email', 'Role', 'Faculty', 'Department', 'Status', 'Last Login', 'Created Date', 'Actions'].map((head) => <th key={head} className="whitespace-nowrap px-4 py-3 font-semibold">{head}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {users.map((user) => (
                   <tr key={user._id}>
@@ -175,6 +179,7 @@ export default function UserManagementPage() {
                     <td className="whitespace-nowrap px-4 py-3">{user.email || '-'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{user.role}</td>
                     <td className="whitespace-nowrap px-4 py-3">{user.faculty || '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{user.department || '-'}</td>
                     <td className="whitespace-nowrap px-4 py-3 capitalize">{user.status}</td>
                     <td className="whitespace-nowrap px-4 py-3">{user.lastLogin ? new Date(user.lastLogin).toLocaleString() : '-'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{new Date(user.createdAt).toLocaleDateString()}</td>
@@ -201,9 +206,10 @@ export default function UserManagementPage() {
               <Field label="Username"><input className="input" value={form.loginId} onChange={(event) => setForm({ ...form, loginId: event.target.value })} required disabled={Boolean(editing)} /></Field>
               <Field label="Email"><input className="input" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
               <Field label={editing ? 'New Password' : 'Password'}><input className="input" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required={!editing} /></Field>
-              <Field label="Role"><SearchableSelect value={form.role} onChange={(value) => setForm({ ...form, role: value })} options={roleOptions} placeholder="Select Role" label="Role" /></Field>
+              <Field label="Role"><SearchableSelect value={form.role} onChange={(value) => setForm({ ...form, role: value, departmentId: value === 'registration' ? form.departmentId : '' })} options={roleOptions} placeholder="Select Role" label="Role" /></Field>
               <Field label="Status"><SearchableSelect value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={['active', 'inactive']} placeholder="Select Status" label="Status" /></Field>
-              <Field label="Faculty"><SearchableSelect value={form.facultyId} onChange={(value) => setForm({ ...form, facultyId: value })} options={faculties.map((item) => ({ value: item._id, label: item.name }))} placeholder="Select Faculty" label="Faculty" required /></Field>
+              <Field label="Faculty"><SearchableSelect value={form.facultyId} onChange={(value) => setForm({ ...form, facultyId: value, departmentId: '' })} options={faculties.map((item) => ({ value: item._id, label: item.name }))} placeholder="Select Faculty" label="Faculty" required /></Field>
+              {form.role === 'registration' ? <Field label="Department"><SearchableSelect value={form.departmentId} onChange={(value) => setForm({ ...form, departmentId: value })} options={departments.filter((item) => String(item.faculty) === String(form.facultyId)).map((item) => ({ value: item._id, label: item.name }))} placeholder="Select Department" label="Department" required /></Field> : null}
               <label className="sm:col-span-2"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Permissions (use | separator)</span><input className="input" value={form.permissions} onChange={(event) => setForm({ ...form, permissions: event.target.value })} placeholder="students.manage|assignments.manage|reports.department" /></label>
             </div>
             <div className="mt-5 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button><button className="btn-primary">Save User</button></div>

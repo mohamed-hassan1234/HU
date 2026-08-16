@@ -6,6 +6,7 @@ const Lecturer = require('../models/Lecturer');
 const Student = require('../models/Student');
 const ClassGroup = require('../models/Class');
 const Evaluation = require('../models/Evaluation');
+const EvaluationCampaign = require('../models/EvaluationCampaign');
 const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
@@ -23,7 +24,8 @@ const {
   writeSession
 } = require('../utils/bulkImport');
 const logActivity = require('../utils/logActivity');
-const { hydrateFacultyDepartment, scopedQuery, assertCanAccessFaculty, userFacultyId } = require('../utils/accessControl');
+const { sendOperationalError } = require('../utils/httpError');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
 
 const router = express.Router();
 const manageAssignments = [protect, authorize('admin', 'registration')];
@@ -114,7 +116,7 @@ const duplicateQuery = (parts) => {
 };
 
 const sendImportError = (res, error, fallback = 'Import failed') => {
-  res.status(error.statusCode || 500).json({ message: error.message || fallback });
+  sendOperationalError(res, error, fallback);
 };
 
 const unsupportedHeaders = (rawRows, fields) => {
@@ -130,11 +132,11 @@ const unsupportedHeaders = (rawRows, fields) => {
 };
 
 const buildAssignmentMasterData = async (req) => {
-  const classQuery = req.user.role === 'registration' && userFacultyId(req.user)
-    ? { faculty: userFacultyId(req.user), status: { $ne: 'inactive' } }
+  const classQuery = req.user.role === 'registration' && userDepartmentId(req.user)
+    ? { department: userDepartmentId(req.user), status: { $ne: 'inactive' } }
     : { status: { $ne: 'inactive' } };
   const [courses, lecturers, classes] = await Promise.all([
-    Course.find(scopedQuery(req, { status: { $ne: 'inactive' } })).lean(),
+    Course.find({ status: { $ne: 'inactive' } }).lean(),
     Lecturer.find(scopedQuery(req, { status: { $ne: 'inactive' } })).lean(),
     ClassGroup.find(classQuery).lean()
   ]);
@@ -237,7 +239,7 @@ const validateAssignmentRows = async (rawRows, req, fileName) => {
     else {
       const classItem = resolved.classItem;
       try {
-        assertCanAccessFaculty(req, classItem.faculty);
+        assertCanAccessDepartment(req, classItem.department);
       } catch (error) {
         errors.push(error.message);
       }
@@ -342,7 +344,7 @@ router.get('/', protect, authorize('admin', 'registration', 'dean', 'lecturer'),
   if (lecturerId && req.user.role !== 'lecturer') query.lecturerId = lecturerId;
   if (className) query.className = className;
   if (classId) query.classId = classId;
-  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   if (semester) query.semester = semester;
   if (academicYear) query.academicYear = academicYear;
   if (['active', 'inactive'].includes(status)) query.status = status;
@@ -361,7 +363,7 @@ router.get('/:id/participation', protect, authorize('admin', 'registration', 'de
     ? await CourseAssignment.findById(req.params.id).lean()
     : await CourseAssignment.findOne({ assignmentId: req.params.id }).lean();
   if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
-  if (req.user.role === 'registration') assertCanAccessFaculty(req, assignment.facultyId);
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, assignment.departmentId);
 
   const [students, evaluations] = await Promise.all([
     Student.find({
@@ -425,15 +427,25 @@ const hydrateAssignment = async (payload, options = {}) => {
   ]);
   if (!course) throw Object.assign(new Error('Selected course was not found'), { statusCode: 400 });
   if (!lecturer) throw Object.assign(new Error('Selected lecturer was not found'), { statusCode: 400 });
-  if (master.departmentId && lecturer.departmentId && String(lecturer.departmentId) !== String(master.departmentId)) {
-    throw Object.assign(new Error('Selected lecturer does not belong to the selected department'), { statusCode: 400 });
+  const homeDepartment = String(lecturer.departmentId || '') === String(master.departmentId || '');
+  const sharedDepartment = lecturer.teachingScope === 'shared' && (lecturer.allowedDepartments || []).some((id) => String(id) === String(master.departmentId));
+  const sharedFaculty = lecturer.teachingScope === 'shared' && (lecturer.allowedFaculties || []).some((id) => String(id) === String(master.facultyId));
+  if (!homeDepartment && !sharedDepartment && !sharedFaculty) {
+    throw Object.assign(new Error('This lecturer is not authorized to teach in the selected class department'), { statusCode: 400 });
   }
+  const classRecord = await ClassGroup.findById(payload.classId).lean();
+  if (!classRecord) throw Object.assign(new Error('The selected class could not be found'), { statusCode: 400 });
   return {
     ...payload,
     ...master,
     assignmentTitle: safeText(payload.assignmentTitle) || `${course.courseCode} - ${master.className || payload.className}`,
     courseName: course.courseName,
     lecturerName: lecturer.fullName,
+    semester: `Semester ${classRecord.currentSemester}`,
+    academicYear: classRecord.currentAcademicYearName,
+    academicYearId: classRecord.currentAcademicYear,
+    termId: classRecord.currentTerm,
+    termNumber: classRecord.currentTermNumber,
     assignedStudents: payload.assignmentMode === 'students' ? payload.assignedStudents : [],
     createdBy: payload.createdBy || options.createdBy
   };
@@ -462,7 +474,7 @@ const validateAssignmentPayload = async (payload) => {
 
   const classRecord = await ClassGroup.findById(payload.classId).lean();
   if (!classRecord) throw Object.assign(new Error('The selected class could not be found.'), { statusCode: 400 });
-  if (classRecord.status === 'inactive') {
+  if (['inactive', 'graduated', 'archived'].includes(classRecord.status)) {
     throw Object.assign(new Error('Closed classes cannot be used for new course assignments.'), { statusCode: 400 });
   }
 
@@ -482,6 +494,17 @@ const validateAssignmentPayload = async (payload) => {
       throw Object.assign(new Error('One or more selected students do not belong to the selected class.'), { statusCode: 400 });
     }
   }
+};
+
+const ensureAssignmentMutable = async (assignment) => {
+  if (await Evaluation.exists({ assignment: assignment._id })) {
+    throw Object.assign(new Error('Assignments with evaluation responses cannot be changed'), { statusCode: 409 });
+  }
+  if (assignment.academicYearId && assignment.termId && await EvaluationCampaign.exists({
+    academicYear: assignment.academicYearId,
+    term: assignment.termId,
+    status: { $in: ['open', 'closed', 'published'] }
+  })) throw Object.assign(new Error('Assignments are locked after the evaluation campaign opens'), { statusCode: 409 });
 };
 
 const ensureUniqueAssignment = async (payload, ignoreId) => {
@@ -548,9 +571,9 @@ const decorateAssignmentsWithStudentCounts = async (assignments) => {
 router.post('/', manageAssignments, async (req, res) => {
   try {
     const base = toAssignment(req.body);
-    if (req.user.role === 'registration') base.facultyId = userFacultyId(req.user);
+    if (req.user.role === 'registration') base.departmentId = userDepartmentId(req.user);
     const payload = await hydrateAssignment(base, { createdBy: req.user.loginId });
-    if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
     await validateAssignmentPayload(payload);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload);
@@ -558,7 +581,7 @@ router.post('/', manageAssignments, async (req, res) => {
     await logActivity(req, 'create', 'assignment', assignment.assignmentId);
     res.status(201).json(assignment);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    sendOperationalError(res, error);
   }
 });
 
@@ -643,9 +666,9 @@ router.post('/bulk-import/commit', manageAssignments, async (req, res) => {
     let imported = 0;
     for (const record of records) {
       let payload = toAssignment(record);
-      if (req.user.role === 'registration') payload.facultyId = userFacultyId(req.user);
+      if (req.user.role === 'registration') payload.departmentId = userDepartmentId(req.user);
       payload = await hydrateAssignment(payload);
-      if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
+      if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
       await ensureStudentsExistForAssignment(payload);
       await ensureUniqueAssignment(payload);
       await CourseAssignment.create(payload);
@@ -680,11 +703,12 @@ router.put('/:id', manageAssignments, async (req, res) => {
   try {
     const current = await CourseAssignment.findById(req.params.id).lean();
     if (!current) return res.status(404).json({ message: 'Assignment not found' });
-    if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
+    await ensureAssignmentMutable(current);
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
     const base = toAssignment(req.body);
-    if (req.user.role === 'registration') base.facultyId = userFacultyId(req.user);
+    if (req.user.role === 'registration') base.departmentId = userDepartmentId(req.user);
     const payload = await hydrateAssignment(base, { createdBy: current.createdBy });
-    if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
     await validateAssignmentPayload(payload);
     await ensureStudentsExistForAssignment(payload);
     await ensureUniqueAssignment(payload, req.params.id);
@@ -696,14 +720,15 @@ router.put('/:id', manageAssignments, async (req, res) => {
     await logActivity(req, 'update', 'assignment', assignment.assignmentId);
     res.json(assignment);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    sendOperationalError(res, error);
   }
 });
 
 router.delete('/:id', manageAssignments, async (req, res) => {
   const current = await CourseAssignment.findById(req.params.id).lean();
   if (!current) return res.status(404).json({ message: 'Assignment not found' });
-  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
+  await ensureAssignmentMutable(current);
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
   const assignment = await CourseAssignment.findByIdAndDelete(req.params.id);
   if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
   await logActivity(req, 'delete', 'assignment', assignment.assignmentId);
@@ -716,9 +741,9 @@ router.post('/import-csv', manageAssignments, upload.single('file'), async (req,
   let skipped = 0;
   for (const row of rows) {
     let payload = toAssignment(row);
-    if (req.user.role === 'registration') payload.facultyId = userFacultyId(req.user);
+    if (req.user.role === 'registration') payload.departmentId = userDepartmentId(req.user);
     payload = await hydrateAssignment(payload);
-    if (req.user.role === 'registration') assertCanAccessFaculty(req, payload.facultyId);
+    if (req.user.role === 'registration') assertCanAccessDepartment(req, payload.departmentId);
     if (!payload.assignmentId || !payload.courseCode) continue;
     const duplicate = await CourseAssignment.findOne({
       courseCode: payload.courseCode,

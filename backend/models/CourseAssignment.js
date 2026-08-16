@@ -15,6 +15,9 @@ const courseAssignmentSchema = new mongoose.Schema(
     classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
     semester: { type: String, required: true, trim: true },
     academicYear: { type: String, required: true, trim: true },
+    academicYearId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicYear' },
+    termId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicTerm' },
+    termNumber: { type: Number, enum: [1, 2] },
     lecturerId: { type: String, required: true, trim: true },
     lecturerName: { type: String, required: true, trim: true },
     assignmentDate: { type: String, trim: true },
@@ -28,7 +31,7 @@ const courseAssignmentSchema = new mongoose.Schema(
 );
 
 courseAssignmentSchema.index(
-  { courseCode: 1, className: 1, semester: 1, academicYear: 1 },
+  { courseCode: 1, classId: 1, academicYearId: 1, termId: 1 },
   { unique: true }
 );
 courseAssignmentSchema.index({ classId: 1, lecturerId: 1, status: 1 });

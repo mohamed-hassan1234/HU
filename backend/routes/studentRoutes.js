@@ -6,6 +6,7 @@ const Department = require('../models/Department');
 const Evaluation = require('../models/Evaluation');
 const CourseAssignment = require('../models/CourseAssignment');
 const ClassGroup = require('../models/Class');
+const StudentClassMembership = require('../models/StudentClassMembership');
 const upload = require('../middleware/upload');
 const { protect, authorize } = require('../middleware/auth');
 const { readCsv, sendCsv } = require('../utils/csv');
@@ -23,7 +24,9 @@ const {
   writeSession
 } = require('../utils/bulkImport');
 const logActivity = require('../utils/logActivity');
-const { hydrateFacultyDepartment, scopedQuery, assertCanAccessFaculty, userFacultyId } = require('../utils/accessControl');
+const { sendOperationalError } = require('../utils/httpError');
+const { hydrateFacultyDepartment, scopedQuery, assertCanAccessDepartment, userDepartmentId } = require('../utils/accessControl');
+const { syncStudentMembership } = require('../utils/studentMembership');
 
 const router = express.Router();
 const manageStudents = [protect, authorize('admin', 'registration')];
@@ -125,7 +128,7 @@ const exportQuery = (req) => {
   if (faculty) query.faculty = faculty;
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
   if (department) query.department = department;
-  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   if (className) query.className = className;
   if (classId) query.classId = classId;
   if (['active', 'inactive'].includes(status)) query.status = status;
@@ -133,7 +136,7 @@ const exportQuery = (req) => {
 };
 
 const sendImportError = (res, error, fallback = 'Import failed') => {
-  res.status(error.statusCode || 500).json({ message: error.message || fallback });
+  sendOperationalError(res, error, fallback);
 };
 
 const toStudent = async (body, req) => {
@@ -162,7 +165,7 @@ const toStudent = async (body, req) => {
   };
   if (!base.fullName) base.fullName = fullNameFromParts(base);
   if (req?.user?.role === 'registration') {
-    base.facultyId = userFacultyId(req.user);
+    base.departmentId = userDepartmentId(req.user);
   }
   const hydrated = await hydrateFacultyDepartment({
     facultyId: base.facultyId,
@@ -170,15 +173,15 @@ const toStudent = async (body, req) => {
     classId: base.classId,
     fallback: base
   });
-  if (req?.user?.role === 'registration') assertCanAccessFaculty(req, hydrated.facultyId);
+  if (req?.user?.role === 'registration') assertCanAccessDepartment(req, hydrated.departmentId);
   return { ...base, ...hydrated };
 };
 
 const upsertStudentUser = async (student, password) => {
-  const user = await User.findOne({ loginId: student.studentId });
+  const user = await User.findOne({ loginId: student.studentId }).select('+tokenVersion');
   if (user) {
     user.role = 'student';
-    user.status = student.status;
+    user.status = student.status === 'active' ? 'active' : 'inactive';
     user.fullName = student.fullName;
     user.email = student.email;
     user.faculty = student.faculty;
@@ -186,6 +189,10 @@ const upsertStudentUser = async (student, password) => {
     user.department = student.department;
     user.departmentId = student.departmentId;
     if (password) user.password = password;
+    if (password) {
+      user.mustChangePassword = true;
+      user.tokenVersion = Number(user.tokenVersion || 0) + 1;
+    }
     await user.save();
   } else {
     await User.create({
@@ -198,7 +205,8 @@ const upsertStudentUser = async (student, password) => {
       facultyId: student.facultyId,
       department: student.department,
       departmentId: student.departmentId,
-      status: student.status
+      status: student.status === 'active' ? 'active' : 'inactive',
+      mustChangePassword: true
     });
   }
 };
@@ -233,15 +241,15 @@ const validateStudentRows = async (rawRows, req, fileName) => {
       errors.push('Invalid Faculty');
       return;
     }
-    try {
-      assertCanAccessFaculty(req, faculty._id);
-    } catch (error) {
-      errors.push(error.message);
-    }
     const department = master.departmentsByFaculty.get(`${faculty._id}|${normalizeLookup(data.department)}`);
     if (!department) {
       errors.push('Invalid Department or department does not belong to Faculty');
       return;
+    }
+    try {
+      assertCanAccessDepartment(req, department._id);
+    } catch (error) {
+      errors.push(error.message);
     }
     const classItem = resolveImportedClass(master.classesByDepartment, String(department._id), data.className);
     if (!classItem) {
@@ -279,8 +287,8 @@ const validateStudentRows = async (rawRows, req, fileName) => {
 
 const getUniqueClasses = async (req, res) => {
   try {
-    if (req.user.role === 'registration' && userFacultyId(req.user)) {
-      const classes = await ClassGroup.find({ faculty: userFacultyId(req.user), status: { $ne: 'inactive' } })
+    if (req.user.role === 'registration' && userDepartmentId(req.user)) {
+      const classes = await ClassGroup.find({ department: userDepartmentId(req.user), status: { $ne: 'inactive' } })
         .sort({ className: 1 })
         .lean();
       return res.status(200).json(classes.map((item) => item.className));
@@ -312,7 +320,7 @@ router.get('/', manageStudents, async (req, res) => {
   if (faculty) query.faculty = faculty;
   if (facultyId && req.user.role === 'admin') query.facultyId = facultyId;
   if (department) query.department = department;
-  if (departmentId && ['admin', 'registration'].includes(req.user.role)) query.departmentId = departmentId;
+  if (departmentId && req.user.role === 'admin') query.departmentId = departmentId;
   if (className) query.className = className;
   if (classId) query.classId = classId;
   if (['active', 'inactive'].includes(status)) query.status = status;
@@ -328,6 +336,7 @@ router.post('/', manageStudents, async (req, res) => {
   const payload = await toStudent(req.body, req);
   const student = await Student.create(payload);
   await upsertStudentUser(student, payload.password);
+  await syncStudentMembership(student);
   await logActivity(req, 'create', 'student', student.studentId);
   res.status(201).json(student);
 });
@@ -335,11 +344,12 @@ router.post('/', manageStudents, async (req, res) => {
 router.put('/:id', manageStudents, async (req, res) => {
   const current = await Student.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Student not found' });
-  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
   const payload = await toStudent(req.body, req);
   const student = await Student.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true });
   if (!student) return res.status(404).json({ message: 'Student not found' });
   await upsertStudentUser(student, payload.password);
+  await syncStudentMembership(student, 'Administrative class change');
   await logActivity(req, 'update', 'student', student.studentId);
   res.json(student);
 });
@@ -347,7 +357,7 @@ router.put('/:id', manageStudents, async (req, res) => {
 router.delete('/:id', manageStudents, async (req, res) => {
   const current = await Student.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Student not found' });
-  if (req.user.role === 'registration') assertCanAccessFaculty(req, current.facultyId);
+  if (req.user.role === 'registration') assertCanAccessDepartment(req, current.departmentId);
   const student = await Student.findByIdAndDelete(req.params.id);
   if (!student) return res.status(404).json({ message: 'Student not found' });
   await User.deleteOne({ loginId: student.studentId });
@@ -421,6 +431,7 @@ router.post('/bulk-import/commit', manageStudents, async (req, res) => {
       const payload = await toStudent(record, req);
       const student = await Student.create(payload);
       await upsertStudentUser(student, payload.password);
+      await syncStudentMembership(student, 'Bulk registration');
       imported += 1;
     }
     const summary = {
@@ -459,6 +470,7 @@ router.post('/import-csv', manageStudents, upload.single('file'), async (req, re
       runValidators: true
     });
     await upsertStudentUser(student, payload.password);
+    await syncStudentMembership(student, 'Legacy import');
     imported += 1;
   }
   await logActivity(req, 'import_csv', 'student', 'bulk', { imported });
@@ -478,6 +490,8 @@ router.get('/export-csv', manageStudents, async (req, res) => {
 router.get('/me/courses', protect, authorize('student'), async (req, res) => {
   const student = await Student.findOne({ studentId: req.user.loginId });
   if (!student) return res.status(404).json({ message: 'Student profile not found' });
+  const membership = await StudentClassMembership.findOne({ student: student._id, status: 'active' }).lean();
+  if (!membership) return res.json([]);
   const classFilter = student.classId
     ? { classId: student.classId }
     : {
@@ -487,6 +501,8 @@ router.get('/me/courses', protect, authorize('student'), async (req, res) => {
   const [assignments, evaluations] = await Promise.all([
     CourseAssignment.find({
       ...classFilter,
+      academicYearId: membership.academicYear,
+      termId: membership.term,
       $or: [
         { assignmentMode: { $ne: 'students' } },
         { assignedStudents: { $exists: false } },

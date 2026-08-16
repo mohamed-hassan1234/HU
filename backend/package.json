@@ -8,7 +8,9 @@
     "start": "node server.js",
     "seed": "node seed.js",
     "migrate:enterprise": "node scripts/migrateEnterpriseData.js",
-    "test:csv": "node tests/runCsvCheck.js"
+    "migrate:academic": "node scripts/migrateAcademicWorkflow.js",
+    "test:csv": "node tests/runCsvCheck.js",
+    "test:security": "node --test tests/security.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -16,6 +18,9 @@
     "csv-parser": "^3.0.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",

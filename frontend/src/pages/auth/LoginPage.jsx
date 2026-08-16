@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   UserRound
 } from 'lucide-react';
-import { roleHome, useAuth } from '../../context/AuthContext';
+import { roleHome, roleProfile, useAuth } from '../../context/AuthContext';
 import { toast } from '../../utils/alerts';
 import logo from '../../hormuud logo.png';
 import image1 from '../../../image1.jpeg';
@@ -46,15 +46,15 @@ export default function LoginPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  if (user) return <Navigate to={roleHome[user.role] || '/login'} replace />;
+  if (user) return <Navigate to={user.mustChangePassword ? roleProfile(user.role) : roleHome[user.role] || '/login'} replace />;
 
   const submit = async (event) => {
     event.preventDefault();
     setLoading(true);
     try {
       const loggedIn = await login(form.loginId, form.password);
-      toast.fire({ icon: 'success', title: 'Welcome to CTES' });
-      navigate(roleHome[loggedIn.role] || '/login', { replace: true });
+      toast.fire({ icon: 'success', title: loggedIn.mustChangePassword ? 'Change your temporary password to continue' : 'Welcome to CTES' });
+      navigate(loggedIn.mustChangePassword ? roleProfile(loggedIn.role) : roleHome[loggedIn.role] || '/login', { replace: true });
     } catch (error) {
       toast.fire({ icon: 'error', title: error.response?.data?.message || 'Login failed' });
     } finally {

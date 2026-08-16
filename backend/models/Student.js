@@ -22,7 +22,7 @@ const studentSchema = new mongoose.Schema(
     username: { type: String, trim: true },
     password: { type: String, select: false },
     notes: { type: String, trim: true },
-    status: { type: String, enum: ['active', 'inactive'], default: 'active' }
+    status: { type: String, enum: ['active', 'inactive', 'suspended', 'withdrawn', 'graduated'], default: 'active' }
   },
   { timestamps: true }
 );
